@@ -4,7 +4,7 @@ ugui? ?gui? micro-gui?
 
 Cross-platform C++ SVG-based GUI library, used by [Write](http://styluslabs.com) for iOS, Android, Windows, macOS, and Linux.
 
-<Screenshot of Write>
+![screenshot of Write](/example/screenshot-01.png?raw=true)
 
 Why consider choosing ugui?
 
