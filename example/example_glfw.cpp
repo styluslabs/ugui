@@ -1,7 +1,13 @@
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include <fstream>
 #include "glad.h"
 #define GLFW_INCLUDE_NONE
 #include "glfwSDL.h"
+#include "usvg/svgparser.h"
 #include "usvg/svgwriter.h"
 #include "ugui/svggui.h"
 #include "ugui/widgets.h"
@@ -114,11 +120,16 @@ Window* createExampleUI()
   return win;
 }
 
+#ifdef _MSC_VER
+#pragma comment(linker, "/ENTRY:mainCRTStartup")  // use main instead of WinMain even with subsystem:windows
+#endif
+
 int main(int argc, char* argv[])
 {
   bool runApplication = true;
-#ifdef _WIN32
+#if PLATFORM_WIN
   SetProcessDPIAware();
+  winLogToConsole = attachParentConsole();  // printing to old console is slow, but Powershell is fine
 #endif
 
   if(!glfwInit()) { PLATFORM_LOG("glfwInit failed.\n"); return -1; }

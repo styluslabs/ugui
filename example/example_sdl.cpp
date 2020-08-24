@@ -5,6 +5,11 @@
 #include "ugui/widgets.h"
 #include "ugui/textedit.h"
 
+#if PLATFORM_WIN
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #if PLATFORM_IOS
 #include <OpenGLES/ES3/gl.h>
 #include <OpenGLES/ES3/glext.h>
@@ -65,6 +70,8 @@ void PLATFORM_WakeEventLoop() {}
 Window* createExampleUI()
 {
   Window* win = new Window(createWindowNode(R"(<svg class="window" layout="box"></svg>)"));
+  // this is set so focus is not returned to toolbar edit boxes if lost
+  win->isFocusable = true;
 
   TextBox* msgbox = new TextBox(createTextNode("Hello World"));
 
@@ -115,11 +122,12 @@ Window* createExampleUI()
   return win;
 }
 
-int main(int argc, char* argv[])
+int SDL_main(int argc, char* argv[])
 {
   bool runApplication = true;
-#ifdef _WIN32
+#if PLATFORM_WIN
   SetProcessDPIAware();
+  winLogToConsole = attachParentConsole();  // printing to old console is slow, but Powershell is fine
 #endif
 
   SDL_Init(SDL_INIT_VIDEO);
@@ -184,6 +192,13 @@ int main(int argc, char* argv[])
   Painter* painter = new Painter();
   NVGLUframebuffer* nvglFB = nvgluCreateFramebuffer(nvgContext, 0, 0, NVGLU_NO_NVG_IMAGE | nvglFBFlags);
   nvgluSetFramebufferSRGB(1);  // no-op for GLES - sRGB enabled iff FB is sRGB
+
+  if(glGetString) {
+    const char* glVendor = (const char*)glGetString(GL_VENDOR);
+    const char* glRenderer = (const char*)glGetString(GL_RENDERER);
+    const char* glVersion = (const char*)glGetString(GL_VERSION);
+    PLATFORM_LOG("%s - %s - %s\n", glVendor ? glVendor : "", glRenderer ? glRenderer : "", glVersion ? glVersion : "");
+  }
 
   Window* win = createExampleUI();
   win->sdlWindow = sdlWindow;

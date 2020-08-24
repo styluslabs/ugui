@@ -1,5 +1,4 @@
 // SVG GUI (default) CSS style
-// - should we move Widget SVG here too?
 
 const char* defaultStyleCSS = R"#(
 svg.window  /* :root */
