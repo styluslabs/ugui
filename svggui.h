@@ -198,7 +198,7 @@ public:
   void setPressed(Widget* widget);
 
   void showMenu(Widget* menu);
-  void closeMenus(const Widget* parent_menu = NULL);
+  void closeMenus(const Widget* parent_menu = NULL, bool closegroup = false);
   void showContextMenu(Widget* menuext, const Point& p, const Widget* parent_menu = NULL, bool make_pressed = true);
   //bool isInCurrMenuTree(Widget* menu) { isDescendent(menu, getPressedGroupContainer(menuStack.front())); }
 

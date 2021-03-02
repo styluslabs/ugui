@@ -753,12 +753,13 @@ void SvgGui::showMenu(Widget* menu)
   menuStack.push_back(menu);
 }
 
-// close all submenus up to parent_menu
-void SvgGui::closeMenus(const Widget* parent_menu)
+// close all submenus up to parent_menu ... we may actually want closegroup = true to be default
+void SvgGui::closeMenus(const Widget* parent_menu, bool closegroup)
 {
   if(menuStack.empty())
     return;
   if(parent_menu) {
+    if(closegroup) parent_menu = getPressedGroupContainer(const_cast<Widget*>(parent_menu));
     // can we do better than checking for class=menu?
     while(parent_menu && !parent_menu->node->hasClass("menu"))
       parent_menu = parent_menu->parent();
@@ -989,7 +990,7 @@ void SvgGui::onHideWidget(Widget* widget)
 
   Window* win = widget->window();
   if(win->focusedWidget && isDescendent(win->focusedWidget, widget)) {
-    win->focusedWidget->sdlUserEvent(this, FOCUS_LOST);
+    win->focusedWidget->sdlUserEvent(this, FOCUS_LOST, 0, widget != win ? win : NULL);
     win->focusedWidget->node->removeClass("focused");
     // if hiding window, focusedWidget will be restored when reshown
     if(widget != win)
@@ -1082,6 +1083,7 @@ bool SvgGui::sdlWindowEvent(SDL_Event* event)
     }
     break;
   case SDL_WINDOWEVENT_FOCUS_LOST:
+    //break;  // this event can complicate debugging menus
     closeMenus();  // close all menus
     // just in case we get into a bad state...
     touchPoints.clear();

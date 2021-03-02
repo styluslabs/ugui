@@ -13,6 +13,7 @@ svg.window  /* :root */
   --checked: #0000C0;
   --title: #2EA3CF;
   --text: #F2F2F2;
+  --text-weak: #A0A0A0;
   --text-bg: #000000;
   --icon: #CDCDCD;
   --icon-disabled: #808080;
@@ -22,7 +23,7 @@ svg.window  /* :root */
 svg.window.light
 {
   --dark: #F0F0F0;
-  --window: #F0F0F0;
+  --window: #DDDDDD;
   --light: #CCCCCC;
   --base: #FFFFFF;
   --button: #D0D0D0;
@@ -31,6 +32,7 @@ svg.window.light
   --checked: #A2CAEF;
   --title: #2EA3CF;
   --text: #000000;
+  --text-weak: #606060;
   --text-bg: #F2F2F2;
   --icon: #303030;
   --icon-disabled: #A0A0A0;
@@ -59,6 +61,7 @@ svg.window.light
 
 text { fill: var(--text); }
 text.window-title { fill: var(--title); font-size: 18; margin: 15px 0; }  /* link */
+text.weak { fill: var(--text-weak); }
 text.disabled { fill: var(--light); }
 text.negative { fill: var(--text-bg); }  /* for inverted background - light in this case */
 
@@ -124,6 +127,8 @@ tspan.text-selection { fill: var(--text-bg); }
 .dialog { fill: var(--window); }  /* .dialog-bg doesn't work for scroll view inside dialog! */
 .panel-header { fill: var(--window); }
 .panel-header .toolbar { fill: var(--window); }
+
+.splitter { fill: var(--dark); }
 
 rect.background { shape-rendering: crispEdges; }
 /*rect.inputbox-bg { shape-rendering: crispEdges; }  -- problem because this applies to stroke too */

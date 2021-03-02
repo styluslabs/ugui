@@ -313,11 +313,11 @@ Menu::Menu(SvgNode* n, Align align) : Widget(n)
     if(event->type == SvgGui::OUTSIDE_PRESSED) {
       // close unless button up over parent (assumed to include opening button)
       if(!isDescendent(static_cast<Widget*>(event->user.data2), parent()))
-        gui->closeMenus();  // close entire menu tree
+        gui->closeMenus(this->parent(), true);  // close entire menu tree
       return true;
     }
     if(event->type == SvgGui::OUTSIDE_MODAL) {
-      gui->closeMenus();  // close entire menu tree
+      gui->closeMenus(this->parent(), true);  // close entire menu tree
       // never swallow right clicks (since context menu parent is whole container ... would it be better for
       //  Menu to have bool isContextMenu member?
       // I think swallowing left clicks is reasonable so user can close context menu w/o activating anything
@@ -509,8 +509,8 @@ ComboBox::ComboBox(SvgNode* n, const std::vector<std::string>& _items) : Widget(
     int ii = items.size();
     items.emplace_back(s);
     Button* btn = new Button(protonode->clone());
-    btn->onClicked = [this, ii](){
-      window()->gui()->closeMenus(NULL);
+    btn->onClicked = [this, ii, combomenu](){
+      window()->gui()->closeMenus(combomenu->parent(), true);
       updateIndex(ii);
     };
     btn->selectFirst("text")->setText(s.c_str());
@@ -823,7 +823,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   addWidget(overlay);
   isFocusable = true;
 
-  addHandler([this](SvgGui* gui, SDL_Event* event) {
+  addHandler([this, overlay](SvgGui* gui, SDL_Event* event) {
     if(event->type == SDL_KEYDOWN) {
       if(event->key.keysym.sym == SDLK_PAGEUP)
         scroll(Point(0, node->bounds().height()));
@@ -837,6 +837,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         return false;
       return true;
     }
+    else if(event->type == SvgGui::OUTSIDE_PRESSED)
+      return overlay->sdlEvent(gui, event);
     return false;
   });
 
