@@ -30,12 +30,13 @@ GLFW ?= 0
 ifneq ($(GLFW), 0)
   SOURCES += example/glfwSDL.c example/example_glfw.cpp
   LINUX_LIBS = -lglfw
-	WIN_LIBS = ../glfw/Release/glfw3.lib
+  WIN_LIBS = ../glfw/Release/glfw3.lib
 else
   SOURCES += example/example_sdl.cpp
   LINUX_LIBS = -lSDL2
-	WIN_LIBS = ../SDL/Release/SDL2.lib
-	DEFS += SDL_FINGER_NORMALIZED
+  # also need SDL2main.lib if using prebuilt SDL
+  WIN_LIBS = ../SDL/Release/SDL2.lib
+  DEFS += SDL_FINGER_NORMALIZED
 endif
 
 ifneq ($(windir),)

@@ -20,11 +20,12 @@ Written for [SDL2](https://libsdl.org/), but [example_glfw.cpp](example/example_
 
 ### Example ###
 
-Clone [ugui-example](https://github.com/styluslabs/ugui-example), then `cd ugui && make` to generate `Release/uguitest`.  In the app, press Print Screen to write the GUI as SVG to `debug_layout.svg`, press F12 to toggle showing dirty rectangle (red) and layout rectangle (green), and press Esc to exit.
+On Linux, `git clone --recurse-submodules` [ugui-example](https://github.com/styluslabs/ugui-example), `apt install libsdl2-dev`, then `cd ugui && make` to generate `Release/uguitest`.  For other platforms, first build the example app for [nanovgXC](https://github.com/styluslabs/nanovgXC) as described in the nanovgXC README to get makefile and SDL set up properly.
 
-The makefile currently only supports Linux and Windows, but adding other platforms is straightforward - see Makefile in [nanovgXC](https://github.com/styluslabs/nanovgXC)
+In the app, press Print Screen to write the GUI as SVG to `debug_layout.svg`, press F12 to toggle showing dirty rectangle (red) and layout rectangle (green), and press Esc to exit.
 
 ### Layout ###
+
 The [layout](https://github.com/randrew/layout) library, based on [oui-blendish](https://bitbucket.org/duangle/oui-blendish), is used for calculating layout.  Potential alternatives include [flex](https://github.com/xamarin/flex) and [yoga](https://github.com/facebook/yoga).
 
 Supported layout attributes:
