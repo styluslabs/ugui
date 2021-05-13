@@ -41,8 +41,10 @@ svg.window.light
 .menu { fill: var(--light); }
 .menuitem { fill: var(--window); }
 .menuitem.hovered { fill: var(--hovered); }
-.menuitem.pressed { fill: var(--pressed); }
 .menuitem.checked { fill: var(--checked); }
+.cbmenuitem.checked { fill: var(--window); }
+.cbmenuitem.hovered { fill: var(--hovered); }
+.menuitem.pressed { fill: var(--pressed); }
 .menuitem.disabled { fill: var(--light); }
 
 .menu-icon-container { display: block; }
@@ -62,8 +64,8 @@ svg.window.light
 text { fill: var(--text); }
 text.window-title { fill: var(--title); font-size: 18; margin: 15px 0; }  /* link */
 text.weak { fill: var(--text-weak); }
-text.disabled { fill: var(--light); }
 text.negative { fill: var(--text-bg); }  /* for inverted background - light in this case */
+text.disabled { fill: var(--light); }
 
 /* TODO: combine toolbutton and menuitem styles */
 .toolbar { fill: var(--dark); }
@@ -92,12 +94,21 @@ text.negative { fill: var(--text-bg); }  /* for inverted background - light in t
 
 .button-container .pushbutton { margin: 0 4; }
 
+/* for color and width preview buttons with stroked borders */
+.previewbtn { color: #808080; }
+.previewbtn.hovered { color: var(--hovered); }
+.previewbtn.pressed { color: var(--pressed); }
+
 /* combobox, textbox, spinbox */
 .inputbox { fill: var(--base); }
 .comboitem { fill: var(--base); }  /* #181818 */
 .comboitem.hovered { fill: var(--hovered); }
 .comboitem.pressed { fill: var(--pressed); }
+.inputbox.disabled text { fill: var(--light); }
+.disabled .inputbox text { fill: var(--light); }
 
+.checkbox { color: var(--icon); }
+.checkmark { color: #33B3E3; }
 .checkbox .checkmark { display: none; }
 .checkbox.checked .checkmark { display: block; }
 .menuitem.checked .checkbox .checkmark { display: block; }
@@ -132,6 +143,10 @@ tspan.text-selection { fill: var(--text-bg); }
 
 rect.background { shape-rendering: crispEdges; }
 /*rect.inputbox-bg { shape-rendering: crispEdges; }  -- problem because this applies to stroke too */
+
+.menu, .dialog { box-shadow: 0px 0px 10px 0px rgba(0,0,0,0.5); }
+/*.menu, .dialog { box-shadow: 0px 0px 40px 0px rgba(0,0,0,0.40); }*/ /* like android, but doesn't look great on computer */
+/*.menu, .dialog { box-shadow: 6px 6px 4px -4px rgba(0,0,0,0.375); }*/ /* offset shadow like Windows */
 )#";
 
 // document containing prototypes for widgets; identified by SVG class
@@ -205,9 +220,17 @@ static const char* defaultWidgetSVG = R"#(
     <text class="title" margin="8 8"></text>
   </g>
 
-  <g id="checkbox" class="checkbox" layout="box">
-    <use class="icon" width="26" height="26" xlink:href=":/icons/checkbox_nocheck.svg" />
-    <use class="icon checkmark" width="26" height="26" xlink:href=":/icons/checkbox_check.svg" />
+  <g id="radiobutton" class="radiobutton checkbox">
+    <rect fill="none" width="26" height="26"/>
+    <circle fill="none" stroke="currentColor" stroke-width="1.5" cx="13" cy="13" r="8" />
+    <circle class="checkmark" fill="currentColor" cx="13" cy="13" r="5" />
+  </g>
+
+  <g id="checkbox" class="checkbox">
+    <rect fill="none" width="26" height="26"/>
+    <rect x="4" y="4" fill="none" stroke="currentColor" stroke-width="1" width="18" height="18"/>
+    <polygon class="checkmark" fill="currentColor"
+        points="25.38,4.92,23.18,2.72,12.72,13.29,8.53,9.12,6.33,11.32,12.73,17.69,13.85,16.57,13.84,16.56"/>
   </g>
 
   <!-- non-editable textbox for combobox and spinbox -->

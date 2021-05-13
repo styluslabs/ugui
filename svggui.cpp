@@ -94,17 +94,19 @@ void Widget::setVisible(bool visible)
   if(displayed != visible && win && win->gui())
     sdlUserEvent(win->gui(), visible ? SvgGui::VISIBLE : SvgGui::INVISIBLE);
 
-  if(StringRef(node->getStringAttr("position")) == "absolute") {
+  if(widgetClass() == AbsPosWidgetClass) {  //StringRef(node->getStringAttr("position")) == "absolute") {
+    AbsPosWidget* w = static_cast<AbsPosWidget*>(this);
     node->setDisplayMode(visible ? SvgNode::AbsoluteMode : SvgNode::NoneMode);
     if(win) {
       auto& absPosNodes = win->absPosNodes;
-      auto it = std::find(absPosNodes.begin(), absPosNodes.end(), this);
+      auto it = std::find(absPosNodes.begin(), absPosNodes.end(), w);
       if(!visible && it != absPosNodes.end()) {
         absPosNodes.erase(it);
-        win->gui()->closedWindowBounds.rectUnion(Rect(node->m_renderedBounds).translate(win->winBounds().origin()));
+        Rect r = w->shadowBounds(node->m_renderedBounds).rectUnion(node->m_renderedBounds);
+        win->gui()->closedWindowBounds.rectUnion(r.translate(win->winBounds().origin()));
       }
       else if(visible && it == absPosNodes.end())
-        absPosNodes.push_back(this);
+        absPosNodes.push_back(w);
     }
   }
   else
@@ -173,7 +175,7 @@ static real offsetToPx(const SvgLength& len, real ref)
   return (len.units == SvgLength::PERCENT) ? ref*len.value/100 : len.value;
 }
 
-Point Widget::calcOffset(const Rect& parentbbox) const
+Point AbsPosWidget::calcOffset(const Rect& parentbbox) const
 {
   Point dr(0,0);
   Rect bbox = node->bounds();
@@ -206,7 +208,7 @@ void Widget::addWidget(Widget* child)
 void Widget::onAttrChange(const char* name)
 {
   static const char* layoutAttrs[] = {"left", "top", "right", "bottom", "layout",
-      "flex-direction", "flex-wrap", "justify-content", "box-anchor", "flex-break"};
+      "flex-direction", "flex-wrap", "justify-content", "box-anchor", "flex-break", "box-shadow"};
   StringRef nameref(name);
   if(layoutVarsValid && (nameref.startsWith("margin") || indexOfStr(nameref, layoutAttrs) >= 0)) {
     layoutVarsValid = false;
@@ -242,10 +244,6 @@ void Widget::updateLayoutVars()
 
   //parseLength(node->getStringAttr("max-width"), NaN);
   //parseLength(node->getStringAttr("max-height"), NaN);
-  offsetLeft = parseLength(node->getStringAttr("left"), NaN);
-  offsetTop = parseLength(node->getStringAttr("top"), NaN);
-  offsetRight = parseLength(node->getStringAttr("right"), NaN);
-  offsetBottom = parseLength(node->getStringAttr("bottom"), NaN);
 
   layContain = 0;
   StringRef layout = node->getStringAttr("layout", "");
@@ -292,6 +290,42 @@ void Widget::updateLayoutVars()
     layBehave |= LAY_BREAK;
 
   layoutVarsValid = true;
+}
+
+void AbsPosWidget::updateLayoutVars()
+{
+  offsetLeft = parseLength(node->getStringAttr("left"), NaN);
+  offsetTop = parseLength(node->getStringAttr("top"), NaN);
+  offsetRight = parseLength(node->getStringAttr("right"), NaN);
+  offsetBottom = parseLength(node->getStringAttr("bottom"), NaN);
+
+  shadowBlur = 0;
+  shadowSpread = 0;
+  shadowDx = 0;
+  shadowDy = 0;
+  shadowColor = Color::INVALID_COLOR;
+  const char* shadow = node->getStringAttr("box-shadow");
+  if(shadow) {
+    StringRef shd(shadow);
+    shadowDx = parseLength(shd, SvgLength(0)).value;
+    shd.advance(shd.find(" ")).trimL();
+    shadowDy = parseLength(shd, SvgLength(0)).value;
+    shd.advance(shd.find(" ")).trimL();
+    if(!shd.isEmpty() && isDigit(shd[0])) {
+      shadowBlur = parseLength(shd, SvgLength(0)).value;  // nanovg "feather"
+      shd.advance(shd.find(" ")).trimL();
+    }
+    if(!shd.isEmpty() && (isDigit(shd[0]) || shd[0] == '-')) {  // spread can be negative
+      shadowSpread = parseLength(shd, SvgLength(0)).value;  // padding for rect
+      shd.advance(shd.find(" ")).trimL();
+    }
+    if(shd.startsWith("inset"))
+      shd.advance(5).trimL();
+    shadowColor = parseColor(shd, Color::BLACK);
+    //if(std::isnan(dx) || std::isnan(dy) || std::isnan(blur) || std::isnan(spread))
+  }
+
+  Widget::updateLayoutVars();
 }
 
 const Rect& Widget::margins() const
@@ -506,7 +540,7 @@ void SvgGui::removeTimers(Widget* w, bool children)
 }
 
 // be wary of trying to refactor this: many branches + reentrant + used multiple places = very complex logic
-lay_id prepareLayout(lay_context* ctx, Widget* ext)
+static lay_id prepareLayout(lay_context* ctx, Widget* ext)
 {
   SvgNode* node = ext->node;
   lay_id id = lay_item(ctx);
@@ -562,7 +596,7 @@ lay_id prepareLayout(lay_context* ctx, Widget* ext)
   return id;
 }
 
-void applyLayout(lay_context* ctx, Widget* ext)
+static void applyLayout(lay_context* ctx, Widget* ext)
 {
   SvgNode* node = ext->node;
   if(ext->layoutId() < 0)
@@ -714,7 +748,7 @@ void SvgGui::layoutWindow(Window* win, const Rect& bbox)
   lay_reset_context(ctx);
 }
 
-void SvgGui::layoutAbsPosNode(Widget* ext)
+void SvgGui::layoutAbsPosWidget(AbsPosWidget* ext)
 {
   lay_context* ctx = &layoutCtx;
   Rect parentbbox = ext->node->parent()->bounds();
@@ -1083,7 +1117,9 @@ bool SvgGui::sdlWindowEvent(SDL_Event* event)
     }
     break;
   case SDL_WINDOWEVENT_FOCUS_LOST:
-    //break;  // this event can complicate debugging menus
+#if !defined(NDEBUG) && defined(PLATFORM_LINUX)
+    break;  // this event can complicate debugging menus
+#endif
     closeMenus();  // close all menus
     // just in case we get into a bad state...
     touchPoints.clear();
@@ -1518,6 +1554,25 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
   return widget != NULL;
 }
 
+
+static void drawShadow(Painter* p, AbsPosWidget* w)
+{
+  real dx = w->shadowDx, dy = w->shadowDy;
+  Rect bounds = Rect(w->node->bounds()).pad(w->shadowSpread);
+  Rect shdbnds = bounds.toSize().pad(0.5*w->shadowBlur + 1).translate(dx, dy);
+  Color c = w->shadowColor;
+  p->save();
+  p->translate(bounds.origin());
+  Gradient grad = Gradient::box(dx, dy, bounds.width(), bounds.height(), 0, w->shadowBlur);
+  grad.coordMode = Gradient::userSpaceOnUseMode;
+  //grad.setObjectBBox(Rect::ltwh(d, props.height, props.width, d));
+  grad.setColorAt(0, c);
+  grad.setColorAt(1, c.setAlphaF(0));
+  p->setFillBrush(&grad);
+  p->drawRect(shdbnds);
+  p->restore();
+}
+
 // We've now failed twice trying to use Windows for abs pos nodes; the 2nd attempt (15 Sept 2019) was on the
 //  right track I think (replacing Widget w/ Window for abs pos nodes, but leaving in parent doc structure),
 //  but problems arose due to abs pos node bounds origin being at (0,0) since they now had winBounds
@@ -1549,8 +1604,12 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
     Rect windirty = SvgPainter::calcDirtyRect(win->node);
     Rect laydirty = layoutDirtyRoot && debugDirty ? layoutDirtyRoot->node->bounds() : Rect();
     Point origin = win->winBounds().origin();
+    if(win->node->m_dirty > SvgNode::CHILD_DIRTY && win->hasShadow()) {
+      windirty.rectUnion(win->shadowBounds(win->node->bounds()));
+      windirty.rectUnion(win->shadowBounds(win->node->m_renderedBounds));
+    }
 
-    for(Widget* w : win->absPosNodes) {
+    for(AbsPosWidget* w : win->absPosNodes) {
       SvgNode* parentnode = w->node->parent();
       if(parentnode->bounds() != parentnode->m_renderedBounds)
         layoutDirtyRoot = w;
@@ -1558,22 +1617,26 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
         layoutDirtyRoot = findLayoutDirtyRoot(w);
 
       if(layoutDirtyRoot == w || debugLayout)
-        layoutAbsPosNode(w);
+        layoutAbsPosWidget(w);
       else if(layoutDirtyRoot)
         layoutWidget(layoutDirtyRoot, layoutDirtyRoot->parent()->node->m_renderedBounds);  // bounds());
 
       // adjust position to keep on screen (not necessarily inside parent bounds)
       Rect b = w->node->bounds().translate(origin);
-      real dx = 0, dy = 0;
-      if(b.left < 0)  dx = -b.left;
-      else if(b.right > screenRect.width())  dx = -std::min(b.left, b.right - screenRect.width());
-      if(b.top < 0)  dy = -b.top;
-      else if(b.bottom > screenRect.height())  dy = -std::min(b.top, b.bottom - screenRect.height());
+      real dx = b.left < 0 ? -b.left :
+          b.right > screenRect.width() ? -std::min(b.left, b.right - screenRect.width()) : 0;
+      real dy = b.top < 0 ? -b.top :
+          b.bottom > screenRect.height() ? -std::min(b.top, b.bottom - screenRect.height()) : 0;
       if(dx != 0 || dy != 0)
         w->setLayoutTransform(Transform2D::translating(dx, dy) * w->layoutTransform());
 
       windirty.rectUnion(SvgPainter::calcDirtyRect(w->node));
       laydirty.rectUnion(layoutDirtyRoot && debugDirty ? layoutDirtyRoot->node->bounds() : Rect());
+
+      if(w->node->m_dirty > SvgNode::CHILD_DIRTY && w->hasShadow()) {
+        windirty.rectUnion(w->shadowBounds(w->node->bounds()));
+        windirty.rectUnion(w->shadowBounds(w->node->m_renderedBounds));
+      }
     }
 
     dirty.rectUnion(windirty.translate(origin));
@@ -1633,11 +1696,17 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
     Window* win = windows[ii];
     //if(!win->winBounds().intersects(cliprect)) continue;
     Point origin = win->winBounds().origin();
+    Rect winclip = Rect(cliprect).translate(-origin);
 
     painter->translate(origin);
-    SvgPainter(painter).drawNode(win->node, Rect(cliprect).translate(-origin));
-    for(Widget* widget : win->absPosNodes)
-      SvgPainter(painter).drawNode(widget->node, Rect(cliprect).translate(-origin));
+    if(win->hasShadow() && win->shadowBounds(win->winBounds().toSize()).intersects(winclip))
+      drawShadow(painter, win);
+    SvgPainter(painter).drawNode(win->node, winclip);
+    for(AbsPosWidget* widget : win->absPosNodes) {
+      if(widget->hasShadow() && widget->shadowBounds(widget->node->bounds()).intersects(winclip))
+        drawShadow(painter, widget);
+      SvgPainter(painter).drawNode(widget->node, winclip);
+    }
 
     // unfortunate hack to draw overlay for disabled window - previously, we set class=disabled on window to
     //  show a box-anchor=fill node, but that forces restyle and layout of whole window (and sets icons to

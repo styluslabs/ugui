@@ -74,7 +74,7 @@ public:
 };*/
 void setupMenuItem(Button* btn);
 
-class Menu : public Widget
+class Menu : public AbsPosWidget
 {
 public:
   enum Align { HORZ=1<<0, VERT=1<<1, LEFT=1<<2, RIGHT=1<<3,
@@ -257,7 +257,7 @@ SvgDocument* createWindowNode(const char* svg = R"#(<svg class="window" layout="
 // should we do, e.g., CheckBox::create() instead of createCheckBox()?
 Menu* createMenu(Menu::Align align, bool showicons = true);
 Button* createMenuItem(const char* title, const SvgNode* icon = NULL);
-Button* createCheckBoxMenuItem(const char* title);
+Button* createCheckBoxMenuItem(const char* title, const char* cbnode = "#checkbox");
 Button* createMenuItem(Widget* contents);
 Toolbar* createToolbar();
 Toolbar* createVertToolbar();
@@ -265,7 +265,8 @@ Button* createToolbutton(const SvgNode* icon, const char* title = "", bool showT
 Button* createPushbutton(const char* title);
 CheckBox* createCheckBox(bool checked = false);
 ComboBox* createComboBox(const std::vector<std::string>& items);
-SpinBox* createSpinBox(real val=0, real inc=1, real min=-INFINITY, real max=INFINITY, const char* format="");
+SpinBox* createSpinBox(
+    real val=0, real inc=1, real min=-INFINITY, real max=INFINITY, const char* format="", real minwidth=0);
 Slider* createSlider();
 Dialog* createDialog(const char* title, const SvgNode* icon = NULL);
 SvgText* createTextNode(const char* text);

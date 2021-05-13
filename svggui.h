@@ -3,6 +3,7 @@
 #include <thread>
 #include <functional>
 #include "usvg/svgnode.h"
+#include "ulib/threadutil.h"  // Semaphore
 #include "svggui_platform.h"
 
 // https://github.com/randrew/layout - based on https://bitbucket.org/duangle/oui-blendish
@@ -42,19 +43,20 @@ public:
   void setVisible(bool visible = true);
   bool isDisplayed() const { return isVisible() && (!parent() || parent()->isDisplayed()); }
   void setLayoutIsolate(bool isolate) { layoutIsolate = isolate; }
-  void updateLayoutVars();
+  virtual void updateLayoutVars();
 
   // experimental
   void setText(const char* s);  // consider removing since we have TextBox class now
   Widget* selectFirst(const char* selector) const;
   std::vector<Widget*> select(const char* selector) const;
-  Point calcOffset(const Rect& parentbbox) const;
   void addWidget(Widget* child);
   void redraw() { node->setDirty(SvgNode::PIXELS_DIRTY); } // should only be needed by custom widgets
   SvgContainerNode* containerNode() const { return node->asContainerNode(); }
   Widget* parent() const;
   Window* window() const;
   void removeFromParent();
+  enum WidgetClass_t { WidgetClass, AbsPosWidgetClass, WindowClass };
+  virtual WidgetClass_t widgetClass() const { return WidgetClass; }
 
   // this might be overkill - could just use void* for user data and require user handle deletion
   // ... user may not want Widget to delete the userdata!
@@ -82,10 +84,6 @@ public:
 //private:
   //Dim maxWidth = 0;  // only for abs pos nodes and/or flex wrap containers
   //Dim maxHeight = 0;
-  SvgLength offsetLeft;
-  SvgLength offsetTop;
-  SvgLength offsetRight;
-  SvgLength offsetBottom;
   Rect m_margins;
   int m_layoutId = -1;
 
@@ -103,10 +101,29 @@ public:
   std::shared_ptr<void> m_userData;
 };
 
-class Window : public Widget
+class AbsPosWidget : public Widget
 {
 public:
-  Window(SvgDocument* doc) : Widget(doc) {}
+  using Widget::Widget;
+  SvgLength offsetLeft;
+  SvgLength offsetTop;
+  SvgLength offsetRight;
+  SvgLength offsetBottom;
+
+  real shadowDx = 0, shadowDy = 0, shadowBlur = 0, shadowSpread = 0;
+  Color shadowColor;
+  Rect shadowBounds(Rect b) const { return b.pad(shadowSpread).pad(0.5*shadowBlur + 1).translate(shadowDx, shadowDy); }
+  bool hasShadow() const { return shadowSpread > 0 || shadowBlur > 0; }
+
+  Point calcOffset(const Rect& parentbbox) const;
+  void updateLayoutVars() override;
+  WidgetClass_t widgetClass() const override { return AbsPosWidgetClass; }
+};
+
+class Window : public AbsPosWidget
+{
+public:
+  Window(SvgDocument* doc) : AbsPosWidget(doc) {}
   ~Window() { node->deleteFromExt();  if(sdlWindow) SDL_DestroyWindow(sdlWindow); }
 
   SvgDocument* documentNode() { return static_cast<SvgDocument*>(node); }
@@ -120,6 +137,7 @@ public:
   void setModalChild(Window* modal) { ASSERT(!parentWindow && "Only root windows can have modals");  currentModal = modal; }
   bool isModal() const { return mIsModal; }
   void setModal(bool modal) { mIsModal = modal; }
+  WidgetClass_t widgetClass() const override { return WindowClass; }
   // may go away as we flesh out event and callback architecture
   SvgGui* gui() { return svgGui; }
 
@@ -130,44 +148,8 @@ public:
   bool mIsModal = false;
   Rect mBounds;
   std::string winTitle;
-  std::vector<Widget*> absPosNodes;
+  std::vector<AbsPosWidget*> absPosNodes;
   SDL_Window* sdlWindow = NULL;
-};
-
-#include <mutex>
-#include <condition_variable>
-
-class Semaphore
-{
-private:
-  std::mutex mtx;
-  std::condition_variable cond;
-  unsigned long cnt = 0;
-
-public:
-  void post()
-  {
-    std::lock_guard<decltype(mtx)> lock(mtx);
-    ++cnt;
-    cond.notify_one();
-  }
-
-  void wait()
-  {
-    std::unique_lock<decltype(mtx)> lock(mtx);
-    cond.wait(lock, [this](){ return cnt > 0; });
-    --cnt;
-  }
-
-  // returns true if semaphore was signaled, false if timeout occurred
-  bool waitForMsec(unsigned long ms)
-  {
-    std::unique_lock<decltype(mtx)> lock(mtx);
-    bool res = cond.wait_for(lock, std::chrono::milliseconds(ms), [this](){ return cnt > 0; });
-    if(res)
-      --cnt;
-    return res;
-  }
 };
 
 struct Timer
@@ -208,7 +190,7 @@ public:
 
   void layoutWidget(Widget* contents, const Rect& bbox);
   void layoutWindow(Window* win, const Rect& bbox);
-  void layoutAbsPosNode(Widget* ext);
+  void layoutAbsPosWidget(AbsPosWidget* ext);
   Rect layoutAndDraw(Painter* painter);
 
   Window* windowfromSDLID(Uint32 id);
@@ -281,5 +263,3 @@ public:
 
 bool isDescendent(Widget* child, Widget* parent);
 bool isLongPressOrRightClick(SDL_Event* event);
-lay_id prepareLayout(lay_context* ctx, Widget* ext);
-void applyLayout(lay_context* ctx, Widget* ext);

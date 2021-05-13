@@ -101,7 +101,6 @@ Widget* createTitledRow(const char* title, Widget* control1, Widget* control2)
 
 Widget* createHRule(int height)
 {
-  //SvgPath* hrule = new SvgPath(NULL, QPainterPath().addRect(Rect::wh(20, height)), SvgNode::RECT);
   SvgRect* hrule = new SvgRect(Rect::wh(20, height));
   hrule->setAttribute("box-anchor", "hfill");
   hrule->addClass("hrule");
@@ -110,7 +109,6 @@ Widget* createHRule(int height)
 
 Widget* createFillRect(bool hasfill)
 {
-  //SvgPath* rect = new SvgPath(NULL, QPainterPath().addRect(Rect::wh(20, 20)), SvgNode::RECT);
   SvgRect* rect = new SvgRect(Rect::wh(20, 20));
   rect->setAttribute("box-anchor", "fill");
   if(!hasfill)
@@ -255,13 +253,13 @@ Button* createMenuItem(const char* title, const SvgNode* icon)
   return cloned;
 }
 
-// probably should disable the usual menuitem.checked styling for these
-Button* createCheckBoxMenuItem(const char* title)
+Button* createCheckBoxMenuItem(const char* title, const char* cbnode)
 {
   Button* item = new Button(widgetNode("#menuitem-standard"));
   item->selectFirst(".title")->setText(title);
   // insert the checkbox after the <use> node, which will remain invisible
-  item->selectFirst(".menu-icon-container")->addWidget(new Widget(widgetNode("#checkbox")));
+  item->selectFirst(".menu-icon-container")->addWidget(new Widget(widgetNode(cbnode)));
+  item->node->addClass("cbmenuitem");
   return item;
 }
 
@@ -274,10 +272,10 @@ Button* createMenuItem(Widget* contents)
 
 // TODO: menu alignment should be determined automatically based on orientation of parent container and
 //  available space
-Menu::Menu(SvgNode* n, Align align) : Widget(n)
+Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
 {
   if(align == VERT_RIGHT)
-    node->setAttribute("left", "0");  //offsetLeft = SvgLength(0);
+    node->setAttribute("left", "0");  //offsetLeft = SvgLength(0); ... would be overwritten by updateLayoutVars()
   else if(align == VERT_LEFT)
     node->setAttribute("right", "0");  //offsetRight = SvgLength(0);
   if(align == HORZ_RIGHT)
@@ -291,7 +289,7 @@ Menu::Menu(SvgNode* n, Align align) : Widget(n)
     node->setAttribute("top", "0");  //offsetTop = SvgLength(0);
 
   // close all menus if button up or down outside menu (except for first click on opening button)
-  // - if our assumption of opening widget being (descedant of) parent fails, we could store opening
+  // - if our assumption of opening widget being (descendant of) parent fails, we could store opening
   //  widget in Menu (or just top level opening widget in SvgGui)
   // - we could also use a flag to close on button up of 2nd click on opening button instead of button down
   // - different GUIs handle details of menu opening/closing and menu bars differently - not a big deal
@@ -309,6 +307,7 @@ Menu::Menu(SvgNode* n, Align align) : Widget(n)
         node->setAttribute(
             prect.left < wrect.width() - prect.right ? "left" : "right", (align & HORZ) ? "100%" : "0");
       }
+      return true;
     }
     if(event->type == SvgGui::OUTSIDE_PRESSED) {
       // close unless button up over parent (assumed to include opening button)
@@ -634,13 +633,14 @@ void SpinBox::updateValue(real val)
 bool SpinBox::setValue(real val)
 {
   real v = std::min(std::max(val, m_min), m_max);
+  if(std::abs(v/m_step) < 1E-6)
+    v = 0.0;  // floating point issues can cause tiny values when stepping
   if(v == m_value)
     return true;
   decBtn->setEnabled(v > m_min);
   incBtn->setEnabled(v < m_max);
   m_value = v;
   spinboxText->setText(fstring(m_format.c_str(), m_value).c_str());
-  //spinboxText->redraw();
   return v == val;
 }
 
@@ -661,13 +661,15 @@ bool SpinBox::updateValueFromText(const char* s)
   return true;
 }
 
-SpinBox* createSpinBox(real val, real inc, real min, real max, const char* format)
+SpinBox* createSpinBox(real val, real inc, real min, real max, const char* format, real minwidth)
 {
   SvgG* spinBoxNode = static_cast<SvgG*>(widgetNode("#spinbox"));
   static_cast<SvgG*>(spinBoxNode->selectFirst(".spinbox_text"))->addChild(widgetNode("#textbox"));
 
   SpinBox* widget = new SpinBox(spinBoxNode, val, inc, min, max, format);
   widget->isFocusable = true;
+  if(minwidth > 0)
+    setMinWidth(widget, minwidth);
   return widget;
 }
 

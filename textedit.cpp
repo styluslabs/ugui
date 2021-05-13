@@ -493,7 +493,7 @@ TextEdit* createTextEdit(int width)
   return new TextEdit(textEditNode);
 }
 
-SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* format)
+SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* format, real minwidth)
 {
   SvgG* spinBoxNode = static_cast<SvgG*>(widgetNode("#spinbox"));
   SvgG* textEditNode = static_cast<SvgG*>(spinBoxNode->selectFirst(".textbox"));
@@ -504,6 +504,8 @@ SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* f
   spinBox->isFocusable = true;
   textEdit->isFocusable = false;
   textEdit->onChanged = [spinBox](const char* s){ spinBox->updateValueFromText(s); };
+  if(minwidth > 0)
+    setMinWidth(spinBox, minwidth);
   return spinBox;
 }
 
