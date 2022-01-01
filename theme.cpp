@@ -216,7 +216,7 @@ static const char* defaultWidgetSVG = R"#(
   </g>
 
   <g id="pushbutton" class="pushbutton" box-anchor="fill" layout="box">
-    <rect class="background"  box-anchor="hfill" width="36" height="36"/>  <!-- rx="8" ry="8" -->
+    <rect class="background" box-anchor="hfill" width="36" height="36"/>  <!-- rx="8" ry="8" -->
     <text class="title" margin="8 8"></text>
   </g>
 

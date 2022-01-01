@@ -2,7 +2,7 @@
 
 ugui? μgui? micro-gui?
 
-Cross-platform C++ SVG-based GUI library, used by [Write](http://styluslabs.com) for iOS, Android, Windows, macOS, and Linux.
+Cross-platform C++ SVG-based GUI library, used by [Write](http://styluslabs.com) for iOS, Android, Windows, macOS, and Linux.  For a demo, try the wasm version of Write at [styluslabs.com/write](http://styluslabs.com/write).
 
 ![screenshot of Write](/example/screenshot-01.png?raw=true)
 

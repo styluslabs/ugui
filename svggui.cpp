@@ -497,8 +497,12 @@ static int timerThreadFn(void* _self)
 Timer* SvgGui::setTimer(int msec, Widget* widget, const std::function<int()>& callback)
 {
   ASSERT(msec > 0);
+#if PLATFORM_EMSCRIPTEN
+//#error "Don't forget to fix this"
+#else
   if(!timerThread)
     timerThread.reset(new std::thread(timerThreadFn, (void*)this));
+#endif
   // remove default timer for widget if setting default timer
   if(!callback)
     removeTimer(widget);
@@ -774,19 +778,6 @@ void SvgGui::layoutAbsPosWidget(AbsPosWidget* ext)
   lay_reset_context(ctx);
 }
 
-void SvgGui::showMenu(Widget* menu)
-{
-  Window* win = windows.back();  //menu->window();
-  if(win->focusedWidget) {
-    win->focusedWidget->sdlUserEvent(this, FOCUS_LOST);
-    win->focusedWidget->node->removeClass("focused");
-  }
-  //if(menuStack.empty())
-  //  onHideWidget(menu->window());  // clear pressed and hovered widgets
-  menu->setVisible(true);
-  menuStack.push_back(menu);
-}
-
 // close all submenus up to parent_menu ... we may actually want closegroup = true to be default
 void SvgGui::closeMenus(const Widget* parent_menu, bool closegroup)
 {
@@ -816,6 +807,23 @@ void SvgGui::closeMenus(const Widget* parent_menu, bool closegroup)
   }
 }
 
+void SvgGui::showMenu(Widget* menu)
+{
+  Window* win = windows.back();  //menu->window();
+  if(win->focusedWidget) {
+    win->focusedWidget->sdlUserEvent(this, FOCUS_LOST);
+    win->focusedWidget->node->removeClass("focused");
+  }
+  // I think this is the right thing to do, but hold off until we actually need it
+  //if(hoveredWidget) {
+  //  Widget* modalWidget = !menuStack.empty() ? getPressedGroupContainer(menuStack.front()) : win->modalChild();
+  //  hoveredLeave(commonParent(menu, hoveredWidget), modalWidget);
+  //}
+  //if(menuStack.empty()) onHideWidget(menu->window());  // clear pressed and hovered widgets
+  menu->setVisible(true);
+  menuStack.push_back(menu);
+}
+
 // don't return a callback as above, just provide this:
 // parent_menu can be used to open context menu on menu item w/o closing menu
 // make_pressed = false can be passed if opening menu on a release event (in which case pressedWidget will be
@@ -829,9 +837,13 @@ void SvgGui::showContextMenu(Widget* menu, const Point& p, const Widget* parent_
   //menu->offsetTop = SvgLength(p.y - parentBounds.top);
   if(!menu->isVisible()) {
     closeMenus(parent_menu);
-    menuStack.push_back(menu);
     //openedContextMenu = menu;
+    //if(hoveredWidget) {
+    //  Widget* modalWidget = !menuStack.empty() ? getPressedGroupContainer(menuStack.front()) : windows.back()->modalChild();
+    //  hoveredLeave(commonParent(menu, hoveredWidget), modalWidget);
+    //}
     menu->setVisible(true);
+    menuStack.push_back(menu);
     // might we want to do this more generally whenever pressedWidget is replaced? don't seem to be any other
     //  cases right now (and we'd need to change Scroller a bit)
     // we send pressedWidget for data2 to prevent closeMenus() in case pressedWidget is a menu
@@ -1005,20 +1017,33 @@ void SvgGui::setPressed(Widget* widget)
   setFocused(widget);
 }
 
+// send leave events to hoveredWidget and ancestors up to but not including widget (which is made the new
+//  hoveredWidget), but not beyond topWidget; widget must be NULL or an ancestor of hoveredWidget
+void SvgGui::hoveredLeave(Widget* widget, Widget* topWidget, SDL_Event* event)
+{
+  if(!hoveredWidget || widget == hoveredWidget)
+    return;
+  // create user event
+  SDL_Event enterleave = {0};
+  enterleave.type = LEAVE;
+  enterleave.user.data1 = event;
+  Widget* leaving = hoveredWidget;
+  while(leaving && leaving != widget) {
+    //PLATFORM_LOG("Leaving: %s\n", SvgNode::nodePath(leaving->node).c_str());
+    leaving->sdlEvent(this, &enterleave);
+    // don't send hover events beyond modal widget
+    if(leaving == topWidget)  //topWidget &&
+      break;
+    leaving = leaving->parent();
+  }
+  hoveredWidget = widget;
+}
+
 // should we include setVisible(false) and rename to "hideWidget"?
 void SvgGui::onHideWidget(Widget* widget)
 {
-  if(hoveredWidget && isDescendent(hoveredWidget, widget)) {
-    // TODO: deduplicate w/ SvgGui::sdlEvent()
-    SDL_Event enterleave = {0};
-    enterleave.type = LEAVE;
-    Widget* leaving = hoveredWidget;
-    while(leaving && leaving != widget) {
-      leaving->sdlEvent(this, &enterleave);
-      leaving = leaving->parent();
-    }
-    hoveredWidget = widget->parent();
-  }
+  if(hoveredWidget && isDescendent(hoveredWidget, widget))
+    hoveredLeave(widget->parent());
   if(pressedWidget && isDescendent(pressedWidget, widget))
     pressedWidget = NULL;
 
@@ -1132,23 +1157,9 @@ bool SvgGui::sdlWindowEvent(SDL_Event* event)
     }
     break; //return true;
   case SDL_WINDOWEVENT_LEAVE:
-    // TODO: dedup this!
     if(hoveredWidget) {
-      SDL_Event enterleave = {0};
-      enterleave.type = LEAVE;
-      enterleave.user.data1 = event;
-
-      // modalChild->parent() should be NULL, so we actually only need to worry about menu
       Widget* modalWidget = !menuStack.empty() ? getPressedGroupContainer(menuStack.front()) : win->modalChild();
-      Widget* leaving = hoveredWidget;
-      while(leaving) {
-        leaving->sdlEvent(this, &enterleave);
-        // don't send hover events beyond modal widget
-        if(modalWidget && leaving == modalWidget)
-          break;
-        leaving = leaving->parent();
-      }
-      hoveredWidget = NULL;
+      hoveredLeave(NULL, modalWidget, event);
     }
     break; //return true;
   case SDL_WINDOWEVENT_CLOSE:  // close window requested by window manager
@@ -1486,29 +1497,17 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
   if(event->type == SDL_FINGERMOTION || event->type == SDL_FINGERDOWN) {
     Widget* topWidget = pressedWidget ? pressedWidget : modalWidget;
     if(widget != hoveredWidget) {
-      // create user event
-      SDL_Event enterleave = {0};
-      enterleave.type = LEAVE;
-      enterleave.user.data1 = event;
-
       Widget* parent = (widget && hoveredWidget) ? commonParent(widget, hoveredWidget) : NULL;
-      if(hoveredWidget) {
-        Widget* leaving = hoveredWidget;
-        while(leaving && leaving != parent) {
-          leaving->sdlEvent(this, &enterleave);
-          // don't send hover events beyond modal widget
-          if(topWidget && leaving == topWidget)
-            break;
-          leaving = leaving->parent();
-        }
-      }
+      hoveredLeave(parent, topWidget, event);
       if(!widget || (topWidget && !isDescendent(widget, topWidget)))
         hoveredWidget = NULL;
       else {
+        SDL_Event enterleave = {0};
+        enterleave.type = ENTER;
+        enterleave.user.data1 = event;
         // we do not enter children of pressed widget unless it is set as pressed group container (note that
         //  case of widget not child of pressedWidget is handled by if() above)
         Widget* entering = pressedWidget && !pressedWidget->isPressedGroupContainer ? pressedWidget : widget;
-        enterleave.type = ENTER;
         while(entering && entering != parent) {
           entering->sdlEvent(this, &enterleave);
           // don't send hover events beyond modal widget

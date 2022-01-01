@@ -11,6 +11,7 @@ public:
   Action(const char* _name, const char* _title, const SvgNode* _icon = NULL, const char* _shortcut = "");
   void addButton(Button* btn);
   void setMenu(Menu* m) { menu = m; }
+  void addMenuAction(Action* a) { menuActions.push_back(a); }
   bool visible() const { return m_visible && !buttons.empty(); }
   void setVisible(bool enabled);
   bool enabled() const { return m_enabled; }
@@ -35,6 +36,7 @@ public:
   bool checkable = false;
   int priority = NormalPriority;
   Menu* menu = NULL;
+  std::vector<Action*> menuActions;
   std::function<void()> onTriggered;
 
 //private:
@@ -78,7 +80,7 @@ class Menu : public AbsPosWidget
 {
 public:
   enum Align { HORZ=1<<0, VERT=1<<1, LEFT=1<<2, RIGHT=1<<3,
-      VERT_RIGHT = VERT|RIGHT, VERT_LEFT=VERT|LEFT, HORZ_RIGHT=HORZ|RIGHT, HORZ_LEFT=HORZ|LEFT };
+      VERT_RIGHT = VERT|RIGHT, VERT_LEFT=VERT|LEFT, HORZ_RIGHT=HORZ|RIGHT, HORZ_LEFT=HORZ|LEFT } mAlign;
 
   Menu(SvgNode* n, Align align);
 
@@ -90,6 +92,9 @@ public:
   void addWidget(Widget* item) { selectFirst(".child-container")->addWidget(item); }
   Button* addSubmenu(const char* title, Menu* submenu);
   void addSeparator();
+  void setAlign(Align align);
+
+  bool autoClose = false;
 };
 
 class Toolbar : public Widget

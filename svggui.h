@@ -187,6 +187,7 @@ public:
   void onHideWidget(Widget* widget);
   void deleteWidget(Widget* node);
   void deleteContents(Widget* widget, const char* sel = "*");
+  void hoveredLeave(Widget* widget, Widget* topWidget = NULL, SDL_Event* event = NULL);
 
   void layoutWidget(Widget* contents, const Rect& bbox);
   void layoutWindow(Window* win, const Rect& bbox);

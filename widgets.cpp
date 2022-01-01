@@ -228,8 +228,10 @@ void setupMenuItem(Button* btn)
   btn->addHandler([btn](SvgGui* gui, SDL_Event* event){
     // no need to handle button down event since it is always preceeded by ENTER event
     if(event->type == SvgGui::ENTER) {
-      gui->closeMenus(btn);  // close sibling menu if any
-      if(btn->mMenu && !btn->mMenu->isVisible()) {
+      if(!btn->mMenu)
+        gui->closeMenus(btn);  // close sibling menu if any
+      else if(!btn->mMenu->isVisible()) {
+        gui->closeMenus(btn);  // close sibling menu if any
         gui->showMenu(btn->mMenu);
         btn->node->addClass("pressed");
       }
@@ -270,42 +272,27 @@ Button* createMenuItem(Widget* contents)
   return item;
 }
 
-// TODO: menu alignment should be determined automatically based on orientation of parent container and
-//  available space
 Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
 {
-  if(align == VERT_RIGHT)
-    node->setAttribute("left", "0");  //offsetLeft = SvgLength(0); ... would be overwritten by updateLayoutVars()
-  else if(align == VERT_LEFT)
-    node->setAttribute("right", "0");  //offsetRight = SvgLength(0);
-  if(align == HORZ_RIGHT)
-    node->setAttribute("left", "100%");  //offsetLeft = SvgLength(100, SvgLength::PERCENT);
-  else if(align == HORZ_LEFT)
-    node->setAttribute("right", "100%");  //offsetRight = SvgLength(100, SvgLength::PERCENT);
-
-  if(align & VERT)
-    node->setAttribute("top", "100%");  //offsetTop = SvgLength(100, SvgLength::PERCENT);
-  else // HORZ_*
-    node->setAttribute("top", "0");  //offsetTop = SvgLength(0);
-
+  setAlign(align);
   // close all menus if button up or down outside menu (except for first click on opening button)
   // - if our assumption of opening widget being (descendant of) parent fails, we could store opening
   //  widget in Menu (or just top level opening widget in SvgGui)
   // - we could also use a flag to close on button up of 2nd click on opening button instead of button down
   // - different GUIs handle details of menu opening/closing and menu bars differently - not a big deal
-  addHandler([this, align](SvgGui* gui, SDL_Event* event){
+  addHandler([this](SvgGui* gui, SDL_Event* event){
     if(event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE) {
       gui->closeMenus();
       return true;
     }
     if(event->type == SvgGui::VISIBLE) {
       // if LEFT/RIGHT not specified, choosen based on available space when menu is opened
-      if(align == HORZ || align == VERT) {
+      if(mAlign == HORZ || mAlign == VERT) {
         Rect wrect = window()->winBounds();
         Rect prect = parent()->node->bounds();
         // if more room to the right of parent, open on the right (left=100% or 0); otherwise open on the left
         node->setAttribute(
-            prect.left < wrect.width() - prect.right ? "left" : "right", (align & HORZ) ? "100%" : "0");
+            prect.left < wrect.width() - prect.right ? "left" : "right", (mAlign & HORZ) ? "100%" : "0");
       }
       return true;
     }
@@ -313,6 +300,10 @@ Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
       // close unless button up over parent (assumed to include opening button)
       if(!isDescendent(static_cast<Widget*>(event->user.data2), parent()))
         gui->closeMenus(this->parent(), true);  // close entire menu tree
+      else if(autoClose) {
+        gui->closeMenus(this->parent(), true);
+        parent()->sdlEvent(gui, static_cast<SDL_Event*>(event->user.data1));
+      }
       return true;
     }
     if(event->type == SvgGui::OUTSIDE_MODAL) {
@@ -333,6 +324,29 @@ Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
   //  be set for menu, not button
   isPressedGroupContainer = true;
   setVisible(false);  // not visible initially
+}
+
+// (option for) menu alignment to be determined automatically based on orientation of parent container?
+void Menu::setAlign(Align align)
+{
+  mAlign = align;
+  if(align == VERT_RIGHT)
+    node->setAttribute("left", "0");  //offsetLeft = SvgLength(0); ... would be overwritten by updateLayoutVars()
+  else if(align == VERT_LEFT)
+    node->setAttribute("right", "0");  //offsetRight = SvgLength(0);
+  else if(align == HORZ_RIGHT)
+    node->setAttribute("left", "100%");  //offsetLeft = SvgLength(100, SvgLength::PERCENT);
+  else if(align == HORZ_LEFT)
+    node->setAttribute("right", "100%");  //offsetRight = SvgLength(100, SvgLength::PERCENT);
+  else {
+    node->removeAttr("left");
+    node->removeAttr("right");
+  }
+
+  if(align & VERT)
+    node->setAttribute("top", "100%");  //offsetTop = SvgLength(100, SvgLength::PERCENT);
+  else // HORZ_*
+    node->setAttribute("top", "0");  //offsetTop = SvgLength(0);
 }
 
 Button* Menu::addSubmenu(const char* title, Menu* submenu)
@@ -418,9 +432,20 @@ void Action::setIcon(const SvgNode* icon)
 // make this private and make just Toolbar and Menu friend?
 void Action::addButton(Button* btn)
 {
-  // currently, an action with Menu can only be used once; correct soln is a MenuAction derived class with
-  //  list of actions from which to build a menu instead of storing already built menu
-  ASSERT(buttons.empty() || !menu);
+  // menuActions is a list of actions from which to build a menu instead of storing already built menu (in
+  //  which case the action can only be used once)
+  ASSERT(!menu || (buttons.empty() && menuActions.empty()));
+  if(!menuActions.empty()) {
+    Menu* m = createMenu(Menu::VERT);
+    btn->setMenu(m);
+    for(Action* a : menuActions)
+      m->addAction(a);
+  }
+  else
+    btn->setMenu(menu);
+
+  if(btn->mMenu && onTriggered)
+    btn->mMenu->autoClose = true;  //  btn->isPressedGroupContainer = true;
 
   // set button id to action name for debugging - could use Action.buttons.size() to create unique id
   btn->node->setXmlId(name.c_str());
@@ -430,7 +455,6 @@ void Action::addButton(Button* btn)
   // can't do item->onClicked = action->onTriggered because onTriggered may change
   //  should we call an Action::triggered() member instead (which can in turn invoke onTriggered?)
   btn->onClicked = [this](){ if(onTriggered) onTriggered(); };
-  btn->setMenu(menu);
   btn->setChecked(m_checked);
   btn->setEnabled(m_enabled);
   buttons.push_back(btn);
@@ -913,6 +937,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         // send mouse click to widget under (initial) touch point
         if(tappedWidget) {
           gui->setPressed(tappedWidget);
+          // TODO: this could potentially delete widget/dialog, so we must not access any members after!
           gui->sendEvent(window(), tappedWidget, event);  //gui->widgetAt(win, prevPos)
           //gui->setPressed(this);  -- doesn't seem to be necessary
         }
@@ -1062,12 +1087,12 @@ Dialog::Dialog(SvgDocument* n, bool reversebtns) : Window(n)
     }
     else if(event->type == SDL_KEYDOWN) {
       if(event->key.keysym.sym == SDLK_ESCAPE || event->key.keysym.sym == SDLK_AC_BACK) {
-        if(cancelBtn && cancelBtn->onClicked)
+        if(cancelBtn && cancelBtn->isEnabled() && cancelBtn->onClicked)
           cancelBtn->onClicked();
         else
           finish(CANCELLED);
       }
-      else if(event->key.keysym.sym == SDLK_RETURN && acceptBtn && acceptBtn->onClicked)
+      else if(event->key.keysym.sym == SDLK_RETURN && acceptBtn && acceptBtn->isEnabled() && acceptBtn->onClicked)
         acceptBtn->onClicked();
       // events won't propagate beyond Window in any case
     }
