@@ -124,7 +124,7 @@ class Window : public AbsPosWidget
 {
 public:
   Window(SvgDocument* doc) : AbsPosWidget(doc) {}
-  ~Window() { node->deleteFromExt();  if(sdlWindow) SDL_DestroyWindow(sdlWindow); }
+  ~Window() override { node->deleteFromExt();  if(sdlWindow) SDL_DestroyWindow(sdlWindow); }
 
   SvgDocument* documentNode() { return static_cast<SvgDocument*>(node); }
   Rect winBounds() const { return mBounds; }
@@ -213,6 +213,9 @@ public:
   void removeTimer(Widget* w);
   void removeTimers(Widget* w, bool children = false);
 
+  static void delayDeleteWin(Window* win);
+  static void pushUserEvent(Uint32 type, Sint32 code, void* data1 = NULL, void* data2 = NULL);
+
   static const SvgDocument* useFile(const char* filename);
   // should this be a standalone fn?  or moved to widgets.cpp?
   static void setupRightClick(Widget* itemext, const std::function<void(SvgGui*, Widget*, Point)>& callback);
@@ -240,7 +243,7 @@ public:
 
   // Should we move outside SvgGui and add "UGUI_" prefix instead?
   enum EventTypes { TIMER=0x9001, LONG_PRESS, MULTITOUCH, ENTER, LEAVE, FOCUS_GAINED, FOCUS_LOST,
-      OUTSIDE_MODAL, OUTSIDE_PRESSED, ENABLED, DISABLED, VISIBLE, INVISIBLE, SCREEN_RESIZED };
+      OUTSIDE_MODAL, OUTSIDE_PRESSED, ENABLED, DISABLED, VISIBLE, INVISIBLE, SCREEN_RESIZED, DELETE_WINDOW };
 
   static constexpr Uint32 LONGPRESSID = SDL_TOUCH_MOUSEID - 2;
   static constexpr Uint32 LONGPRESSALTID = SDL_TOUCH_MOUSEID - 3;

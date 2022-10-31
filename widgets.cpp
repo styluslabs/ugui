@@ -50,7 +50,7 @@ SvgNode* widgetNode(const char* sel)
   return cloned;
 }
 
-Widget* createRow(const char* justify, const char* margin)
+static SvgG* createRowNode(const char* justify = "", const char* margin = "")
 {
   SvgG* row = new SvgG;
   row->addClass("row-layout");
@@ -61,7 +61,12 @@ Widget* createRow(const char* justify, const char* margin)
     row->setAttribute("justify-content", justify);
   if(margin && margin[0])
     row->setAttribute("margin", margin);
-  return new Widget(row);
+  return row;
+}
+
+Widget* createRow(const char* justify, const char* margin)
+{
+  return new Widget(createRowNode(justify, margin));
 }
 
 Widget* createColumn(const char* justify, const char* margin)
@@ -90,10 +95,12 @@ SvgText* createTextNode(const char* text)
 Widget* createTitledRow(const char* title, Widget* control1, Widget* control2)
 {
   Widget* row = createRow("space-between", "5 0");
-  SvgText* titlenode = createTextNode(title);
-  titlenode->setAttribute("margin", control1 ? "4 0" : "4 16 4 0");
-  titlenode->addClass("row-text");
-  row->containerNode()->addChild(titlenode);
+  if(title) {
+    SvgText* titlenode = createTextNode(title);
+    titlenode->setAttribute("margin", control1 ? "4 0" : "4 16 4 0");
+    titlenode->addClass("row-text");
+    row->containerNode()->addChild(titlenode);
+  }
   if(control1) row->addWidget(control1);
   if(control2) row->addWidget(control2);
   return row;
@@ -118,7 +125,7 @@ Widget* createFillRect(bool hasfill)
   return new Widget(rect);
 }
 
-Widget* createStretch() { return createFillRect(false); }
+Widget* createStretch() { Widget* r = createFillRect(false); r->node->addClass("stretch"); return r; }
 
 Toolbar::Toolbar(SvgNode* n) : Widget(n) {}
 
@@ -467,6 +474,8 @@ Button* Menu::addAction(Action* action)
       createCheckBoxMenuItem(action->title.c_str()) : createMenuItem(action->title.c_str(), action->icon());
   action->addButton(item);
   addItem(item);
+  if(!action->tooltip.empty())
+    setupTooltip(item, action->tooltip.c_str());
   return item;
 }
 
@@ -475,7 +484,66 @@ Button* Toolbar::addAction(Action* action)
   Button* item = createToolbutton(action->icon(), action->title.c_str());
   action->addButton(item);
   addWidget(item);
+  setupTooltip(item, action->tooltip.empty() ? action->title.c_str() : action->tooltip.c_str());
   return item;
+}
+
+Tooltips* Tooltips::inst = NULL;
+void setupTooltip(Widget* target, const char* tiptext, int align)
+{
+  if(Tooltips::inst)
+    Tooltips::inst->setup(target, tiptext, align);
+}
+
+void Tooltips::show(Widget* tooltip, Point p, int align)
+{
+  Rect parentBounds = tooltip->node->parent()->bounds();
+  real dx = align & LEFT ? 0 : align & RIGHT ? parentBounds.width() : p.x - parentBounds.left;
+  real dy = align & TOP ? 0 : align & BOTTOM ? parentBounds.height() : p.y - parentBounds.top;
+  tooltip->node->setAttribute("left", fstring("%g", dx + offset.x).c_str());
+  tooltip->node->setAttribute(align & ABOVE ? "bottom" : "top", fstring("%g", dy + offset.y).c_str());
+  tooltip->setVisible(true);
+}
+
+void Tooltips::setup(Widget* target, const char* tiptext, int align)
+{
+  Widget* tooltip = new AbsPosWidget(widgetNode("#tooltip"));
+  SvgNode* textNode = tiptext[0] == '<' ? loadSVGFragment(tiptext) : createTextNode(tiptext);
+  textNode->setAttribute("margin", "3");
+  tooltip->containerNode()->addChild(textNode);
+  tooltip->setVisible(false);
+  target->addWidget(tooltip);
+  // default alignment
+  bool isMenuItem = target->node->hasClass("menuitem");
+  if(align == -1)
+    align = isMenuItem ? (RIGHT | TOP) : (LEFT | BOTTOM);
+
+  target->addHandler([=](SvgGui* gui, SDL_Event* event) {
+    if(event->type == SvgGui::ENTER) {
+      if(gui->pressedWidget != NULL && !isMenuItem)  // don't show tooltip if finger down, except menu items
+        return false;
+      if(event->user.timestamp < hideTime + nextMs) {
+        show(tooltip, gui->prevFingerPos, align);
+      }
+      else {
+        timer = gui->setTimer(delayMs, target, timer, [=]() {
+          show(tooltip, gui->prevFingerPos, align);
+          return 0;  // single shot timer
+        });
+      }
+    }
+    else if(event->type == SvgGui::LEAVE || event->type == SDL_FINGERDOWN) {
+      if(tooltip->isVisible()) {
+        tooltip->setVisible(false);
+        hideTime = event->type == SDL_FINGERDOWN ? 0 : event->user.timestamp;
+      }
+      if(timer) {
+        gui->removeTimer(timer);
+        timer = NULL;
+      }
+    }
+    return false;  // don't swallow event
+  });
 }
 
 CheckBox::CheckBox(SvgNode* n, bool _checked) : Button(n)
@@ -488,9 +556,19 @@ CheckBox::CheckBox(SvgNode* n, bool _checked) : Button(n)
   };
 }
 
-CheckBox* createCheckBox(bool checked)
+CheckBox* createCheckBox(const char* title, bool checked)
 {
-  CheckBox* widget = new CheckBox(widgetNode("#checkbox"), checked);
+  SvgNode* cbnode = widgetNode("#checkbox");
+  if(title && title[0]) {
+    SvgG* row = createRowNode();
+    row->removeAttr("box-anchor");
+    SvgText* titlenode = createTextNode(title);
+    titlenode->setAttribute("margin", "4 2");
+    row->addChild(cbnode);
+    row->addChild(titlenode);
+    cbnode = row;
+  }
+  CheckBox* widget = new CheckBox(cbnode, checked);
   widget->isFocusable = true;
   return widget;
 }

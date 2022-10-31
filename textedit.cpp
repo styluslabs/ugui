@@ -392,7 +392,7 @@ void TextEdit::doUpdate()
   //  change Painter::glyphPositions)?
   if(glyphPos.size() == currText.size()) {
     real pos0 = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
-    real pos1 = stbState.cursor < glyphPos.size() ? glyphPos.at(stbState.cursor).left : pos0;
+    real pos1 = stbState.cursor < int(glyphPos.size()) ? glyphPos.at(stbState.cursor).left : pos0;
     real pos = (pos0 + pos1)/2;
     //Dim pos = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
     cursor->node->setTransform(Transform2D().translate(pos, 0));

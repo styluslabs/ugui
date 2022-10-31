@@ -33,6 +33,7 @@ public:
   std::string name;
   std::string title;
   std::string shortcut;
+  std::string tooltip;
   bool checkable = false;
   int priority = NormalPriority;
   Menu* menu = NULL;
@@ -252,6 +253,27 @@ public:
   Button* cancelBtn = NULL;
 };
 
+// singleton for managing tooltips
+class Tooltips
+{
+public:
+  enum Align { LEFT=1<<0, TOP=1<<1, RIGHT=1<<2, BOTTOM=1<<3, ABOVE=1<<4 };
+  Point offset;
+  int delayMs;
+  int nextMs;
+
+  void setup(Widget* target, const char* tiptext, int align);
+  Tooltips(Point _offset = Point(10,10), int _delayMs = 1000, int _nextMs = 500)
+      : offset(_offset), delayMs(_delayMs), nextMs(_nextMs) {}
+
+  static Tooltips* inst;
+private:
+  Timer* timer = NULL;
+  unsigned int hideTime = 0;
+
+  void show(Widget* tooltip, Point p, int align);
+};
+
 void setGuiResources(const char* svg, const char* css);
 void setWindowXmlClass(const char* winclass);
 SvgNode* widgetNode(const char* sel);
@@ -268,7 +290,7 @@ Toolbar* createToolbar();
 Toolbar* createVertToolbar();
 Button* createToolbutton(const SvgNode* icon, const char* title = "", bool showTitle = false);
 Button* createPushbutton(const char* title);
-CheckBox* createCheckBox(bool checked = false);
+CheckBox* createCheckBox(const char* title = "", bool checked = false);
 ComboBox* createComboBox(const std::vector<std::string>& items);
 SpinBox* createSpinBox(
     real val=0, real inc=1, real min=-INFINITY, real max=INFINITY, const char* format="", real minwidth=0);
@@ -282,3 +304,4 @@ Widget* createTitledRow(const char* title, Widget* control1, Widget* control2 = 
 Widget* createHRule(int height = 2);
 Widget* createFillRect(bool hasfill = true);
 void setMinWidth(Widget* widget, real w, const char* sel = ".min-width-rect");
+void setupTooltip(Widget* target, const char* tiptext, int align=-1);

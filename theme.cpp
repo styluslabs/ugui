@@ -78,11 +78,16 @@ text.disabled { fill: var(--light); }
 
 .toolbutton.checked.once .checkmark { fill: #0060C0; }  /* for non-sticky; random color between pressed and checked */
 
+.tooltip { fill: #FFFFCF; font-size: 13; }
+.tooltip text { fill: #000000; }
+.tooltip .alttext { font-size: 11; font-style: italic; }
+
 .separator { fill: var(--light); }  /* toolbar (and menu?) separator */
 .graybar .separator { fill: #808080; }
 .statusbar .separator { fill: #808080; }
 
 .statusbar { font-size: 24; }  /* to go with 50% scaling hack */
+.statusbar .tooltip { font-size: 24; }
 
 .warning { fill: #FFFF00; }
 .warning text { fill: #000000; }
@@ -111,7 +116,7 @@ text.disabled { fill: var(--light); }
 .checkmark { color: #33B3E3; }
 .checkbox .checkmark { display: none; }
 .checkbox.checked .checkmark { display: block; }
-.menuitem.checked .checkbox .checkmark { display: block; }
+.checked .checkbox .checkmark { display: block; }
 
 .slider-handle-outer { fill: grey; }
 .slider-handle-inner { fill: black; }
@@ -213,6 +218,10 @@ static const char* defaultWidgetSVG = R"#(
   <g id="vert-toolbar-separator" class="toolbar-separator" box-anchor="hfill" layout="box">
     <rect fill="none" box-anchor="hfill" width="36" height="16"/>
     <rect class="separator" box-anchor="hfill" margin="0 4" width="36" height="2"/>
+  </g>
+
+  <g id="tooltip" class="tooltip" box-anchor="fill" layout="box">
+    <rect box-anchor="fill" stroke-width="0.5" stroke="#000" width="36" height="36"/>
   </g>
 
   <g id="pushbutton" class="pushbutton" box-anchor="fill" layout="box">

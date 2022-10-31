@@ -400,6 +400,7 @@ bool Widget::sdlEvent(SvgGui* gui, SDL_Event* event)
   return false;
 }
 
+// send a SDL event directly to a widget (without going through event queue)
 bool Widget::sdlUserEvent(SvgGui* gui, Uint32 type, Sint32 code, void* data1, void* data2)
 {
   SDL_Event event = {0};
@@ -465,6 +466,21 @@ SvgGui::~SvgGui()
   }
 }
 
+// add an SDL event to the global event queue
+void SvgGui::pushUserEvent(Uint32 type, Sint32 code, void* data1, void* data2)
+{
+  SDL_Event event = {0};
+  event.type = type;
+  event.user.code = code;
+  event.user.timestamp = SDL_GetTicks();
+  event.user.data1 = data1;
+  event.user.data2 = data2;
+  SDL_PeepEvents(&event, 1, SDL_ADDEVENT, 0, 0);  //SDL_PushEvent(&event);
+  PLATFORM_WakeEventLoop();
+}
+
+void SvgGui::delayDeleteWin(Window* win) { pushUserEvent(DELETE_WINDOW, 0, win); }
+
 static int timerThreadFn(void* _self)
 {
   SvgGui* self = static_cast<SvgGui*>(_self);
@@ -475,6 +491,7 @@ static int timerThreadFn(void* _self)
       break;
     int64_t dt = self->nextTimeout - mSecSinceEpoch();
     if(dt < 0 || !self->timerSem.waitForMsec(dt)) {
+      //SvgGui::pushUserEvent(SvgGui::TIMER, 0)
       SDL_Event event = {0};
       event.type = SvgGui::TIMER;
       event.user.timestamp = SDL_GetTicks();  // self->nextTimeout???
@@ -1026,6 +1043,7 @@ void SvgGui::hoveredLeave(Widget* widget, Widget* topWidget, SDL_Event* event)
   // create user event
   SDL_Event enterleave = {0};
   enterleave.type = LEAVE;
+  enterleave.user.timestamp = event ? event->common.timestamp : SDL_GetTicks();
   enterleave.user.data1 = event;
   Widget* leaving = hoveredWidget;
   while(leaving && leaving != widget) {
@@ -1221,6 +1239,11 @@ Widget* SvgGui::widgetAt(Window* win, Point p)
   // visual_only = false; alternative would be to first call with true, then w/ false if NULL result
   if(!node && win->winBounds().contains(p + win->winBounds().origin()))
     node = win->containerNode()->nodeAt(p, false);  //documentNode()
+  //if(node) {
+  //  Rect r = node->bounds();
+  //  PLATFORM_LOG("widgetAt %.2f %.2f %s (ltrb: %.0f %.0f %.0f %.0f)\n", p.x, p.y,
+  //      SvgNode::nodePath(node).c_str(), r.left, r.top, r.right, r.bottom);
+  //}
   // find first parent with a Widget set ... I think this is OK, don't see any reason to create ext here
   while(node && !node->hasExt())
     node = node->parent();
@@ -1468,6 +1491,12 @@ bool SvgGui::sdlEvent(SDL_Event* event)
     // widget = NULL will send to menu (modalWidget in sendEvent)
     return sendEvent(win, sendToFocused ? win->focusedWidget : NULL, event);
   }
+  if(event->type == DELETE_WINDOW) {
+    // although deleting a Window inside SvgGui event handler is safe, delayed delete option provided for
+    //  cases where doing so causes problems with user code
+    delete static_cast<Window*>(event->user.data1);
+    return true;
+  }
   if(event->type == TIMER)
     return processTimers();
   if(event->type == SDL_WINDOWEVENT)
@@ -1504,6 +1533,7 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
       else {
         SDL_Event enterleave = {0};
         enterleave.type = ENTER;
+        enterleave.user.timestamp = event->common.timestamp;
         enterleave.user.data1 = event;
         // we do not enter children of pressed widget unless it is set as pressed group container (note that
         //  case of widget not child of pressedWidget is handled by if() above)
