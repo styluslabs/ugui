@@ -1,15 +1,18 @@
 #include "widgets.h"
 #include "usvg/svgparser.h"
+#include "usvg/svgpainter.h"  // for elideText()
 
 // Put these (and create*() fns) in a namespace?  a class?  as static or non-static members?
-static const char* widgetSVG = NULL;
-static const char* styleCSS = NULL;
+//static const char* widgetSVG = NULL;
+//static const char* styleCSS = NULL;
+static std::unique_ptr<SvgDocument> widgetDoc;
+static std::shared_ptr<SvgCssStylesheet> widgetStyle;
 static const char* windowClass = NULL;
 
-void setGuiResources(const char* svg, const char* css)
+void setGuiResources(SvgDocument* svg, SvgCssStylesheet* css)
 {
-  widgetSVG = svg;
-  styleCSS = css;
+  widgetDoc.reset(svg);
+  widgetStyle.reset(css);
 }
 
 void setWindowXmlClass(const char* winclass)
@@ -35,14 +38,9 @@ SvgNode* loadSVGFragment(const char* svg)
 //  (unordered_multimap?) for quick node lookup by class and/or id
 SvgNode* widgetNode(const char* sel)
 {
-  // hopefully this is a temporary hack until we add addition widget modules
-  static std::unique_ptr<SvgDocument> widgetDoc = NULL;
-
   // support selector or SVG fragment
   if(StringRef(sel).trimmed().startsWith("<"))
     return loadSVGFragment(sel);
-  if(!widgetDoc)
-    widgetDoc.reset(SvgParser().parseString(widgetSVG));
   SvgNode* proto = widgetDoc->selectFirst(sel);
   ASSERT(proto && "Prototype not found for widget");
   SvgNode* cloned = proto->clone();
@@ -279,7 +277,7 @@ Button* createMenuItem(Widget* contents)
   return item;
 }
 
-Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
+Menu::Menu(SvgNode* n, int align) : AbsPosWidget(n)
 {
   setAlign(align);
   // close all menus if button up or down outside menu (except for first click on opening button)
@@ -292,20 +290,10 @@ Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
       gui->closeMenus();
       return true;
     }
-    if(event->type == SvgGui::VISIBLE) {
-      // if LEFT/RIGHT not specified, choosen based on available space when menu is opened
-      if(mAlign == HORZ || mAlign == VERT) {
-        Rect wrect = window()->winBounds();
-        Rect prect = parent()->node->bounds();
-        // if more room to the right of parent, open on the right (left=100% or 0); otherwise open on the left
-        node->setAttribute(
-            prect.left < wrect.width() - prect.right ? "left" : "right", (mAlign & HORZ) ? "100%" : "0");
-      }
-      return true;
-    }
     if(event->type == SvgGui::OUTSIDE_PRESSED) {
       // close unless button up over parent (assumed to include opening button)
-      if(!isDescendent(static_cast<Widget*>(event->user.data2), parent()))
+      Widget* target = static_cast<Widget*>(event->user.data2);
+      if(!target || !target->isDescendantOf(parent()))
         gui->closeMenus(this->parent(), true);  // close entire menu tree
       else if(autoClose) {
         gui->closeMenus(this->parent(), true);
@@ -320,8 +308,16 @@ Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
       // I think swallowing left clicks is reasonable so user can close context menu w/o activating anything
       if(event->user.data1 && isLongPressOrRightClick(static_cast<SDL_Event*>(event->user.data1)))
         return false;
+
+      // send finger down event now that modal has been closed
+      gui->sendEvent(window(), static_cast<Widget*>(event->user.data2), static_cast<SDL_Event*>(event->user.data1));
+      // close this menu if it was reopened
+      if(isVisible())
+        gui->closeMenus(this->parent(), true);
+      return true;
+
       // swallow event (i.e. return true) if click was within menu's parent to prevent reopening
-      return isDescendent(static_cast<Widget*>(event->user.data2), parent());
+      //return isDescendent(static_cast<Widget*>(event->user.data2), parent());
     }
     return false;
   });
@@ -333,26 +329,58 @@ Menu::Menu(SvgNode* n, Align align) : AbsPosWidget(n)
   setVisible(false);  // not visible initially
 }
 
+Point Menu::calcOffset(const Rect& pb) const
+{
+  int align = mAlign;
+  if(!align) return AbsPosWidget::calcOffset(pb);
+
+  Point dr(0,0);
+  Rect b = node->bounds();
+  Rect winb = window()->gui()->getScreenRect();
+
+  if(!(align & (LEFT | RIGHT)))
+    align |= (pb.left < window()->winBounds().width() - pb.right) ? RIGHT : LEFT;
+
+  bool vert = align & VERT;
+  bool fitabove = (vert ? pb.top : pb.bottom) - b.height() > 0;
+  bool fitbelow = (vert ? pb.bottom : pb.top) + b.height() < winb.bottom;
+  if(!fitabove && !fitbelow) vert = false;  // e.g. on mobile landscape orientation
+  bool fitleft = (vert ? pb.right : pb.left) - b.width() > 0;
+  bool fitright = (vert ? pb.left : pb.right) + b.width() < winb.right;
+
+  if((align & RIGHT && fitright) || !fitleft)
+    dr.x = (vert ? pb.left : pb.right) - b.left;
+  else
+    dr.x = (vert ? pb.right : pb.left) - b.right;
+
+  if((align & ABOVE && fitabove) || !fitbelow)
+    dr.y = (vert ? pb.top : pb.bottom) - b.bottom;
+  else
+    dr.y = (vert ? pb.bottom : pb.top) - b.top;
+
+  return dr;
+}
+
 // (option for) menu alignment to be determined automatically based on orientation of parent container?
-void Menu::setAlign(Align align)
+void Menu::setAlign(int align)
 {
   mAlign = align;
-  if(align == VERT_RIGHT)
+  node->removeAttr("left");
+  node->removeAttr("right");
+  node->removeAttr("top");
+  node->removeAttr("bottom");
+  if(align & VERT && align & RIGHT)
     node->setAttribute("left", "0");  //offsetLeft = SvgLength(0); ... would be overwritten by updateLayoutVars()
-  else if(align == VERT_LEFT)
+  else if(align & VERT && align & LEFT)
     node->setAttribute("right", "0");  //offsetRight = SvgLength(0);
-  else if(align == HORZ_RIGHT)
+  else if(align & HORZ && align & RIGHT)
     node->setAttribute("left", "100%");  //offsetLeft = SvgLength(100, SvgLength::PERCENT);
-  else if(align == HORZ_LEFT)
+  else if(align & HORZ && align & LEFT)
     node->setAttribute("right", "100%");  //offsetRight = SvgLength(100, SvgLength::PERCENT);
-  else {
-    node->removeAttr("left");
-    node->removeAttr("right");
-  }
 
   if(align & VERT)
-    node->setAttribute("top", "100%");  //offsetTop = SvgLength(100, SvgLength::PERCENT);
-  else // HORZ_*
+    node->setAttribute(align & ABOVE ? "bottom" : "top", "100%");  //offsetTop = SvgLength(100, SvgLength::PERCENT);
+  else if(align & HORZ) // HORZ_*
     node->setAttribute("top", "0");  //offsetTop = SvgLength(0);
 }
 
@@ -380,7 +408,7 @@ Button* Menu::addItem(const char* name, const SvgNode* icon, const std::function
   return item;
 }
 
-Menu* createMenu(Menu::Align align, bool showicons)
+Menu* createMenu(int align, bool showicons)
 {
   Menu* menu = new Menu(widgetNode("#menu"), align);
   if(!showicons)
@@ -573,6 +601,7 @@ CheckBox* createCheckBox(const char* title, bool checked)
   return widget;
 }
 
+// TextBox allows ComboBox and SpinBox to support both editable and non-editable cases
 TextBox::TextBox(SvgNode* n) : Widget(n), textNode(NULL)
 {
   if(n->type() == SvgNode::TEXT)
@@ -581,10 +610,19 @@ TextBox::TextBox(SvgNode* n) : Widget(n), textNode(NULL)
     textNode = static_cast<SvgText*>(n->asContainerNode()->selectFirst("text"));
 }
 
-void TextBox::setText(const char* s)
+// Widget supporting text elision
+TextLabel::TextLabel(SvgNode* n) : TextBox(n)
 {
-  textNode->clearText();
-  textNode->addText(s);
+  origText = TextBox::text();
+  onApplyLayout = [this](const Rect& src, const Rect& dest){
+    if(src.width() == dest.width() || (layBehave & LAY_HFILL) != LAY_HFILL)
+      return false;
+    textNode->setText(origText.c_str());
+    SvgPainter::elideText(textNode, dest.width());
+    m_layoutTransform.translate(dest.left - src.left, dest.top - src.top);
+    node->invalidate(true);
+    return true;
+  };
 }
 
 void setMinWidth(Widget* widget, real w, const char* sel)
@@ -598,32 +636,19 @@ void setMinWidth(Widget* widget, real w, const char* sel)
 
 ComboBox::ComboBox(SvgNode* n, const std::vector<std::string>& _items) : Widget(n), currIndex(0)
 {
-  Menu* combomenu = new Menu(containerNode()->selectFirst(".combo_menu"), Menu::VERT_RIGHT);
+ comboMenu = new Menu(containerNode()->selectFirst(".combo_menu"), Menu::VERT_RIGHT);
   //Menu* combomenu = new Menu(widgetNode("#combo_menu"), Menu::VERT_RIGHT);
-  SvgNode* protonode = combomenu->containerNode()->selectFirst(".combo_proto");
   //comboText = selectFirst(".combo_text");
   SvgNode* textNode = containerNode()->selectFirst(".combo_text");
   comboText = textNode->hasExt() ? static_cast<TextBox*>(textNode->ext()) : new TextBox(textNode);
+  addItems(_items);
 
-  // populate combo dropdown by cloning prototype
-  for(const std::string& s : _items) {
-    int ii = items.size();
-    items.emplace_back(s);
-    Button* btn = new Button(protonode->clone());
-    btn->onClicked = [this, ii, combomenu](){
-      window()->gui()->closeMenus(combomenu->parent(), true);
-      updateIndex(ii);
-    };
-    btn->selectFirst("text")->setText(s.c_str());
-    //SvgText* textnode = (SvgText*)item->selectFirst("text"); textnode->clearText(); textnode->addText(s);
-    btn->setVisible(true);  // prototypes have display="none"
-    combomenu->addWidget(btn);
-  }
-  setText(items.front().c_str());
+  if(!items.empty())
+    setText(items.front().c_str());
   // combobox dropdown behaves the same as a menu
   SvgNode* btn = containerNode()->selectFirst(comboText->isEditable() ? ".combo_open" : ".combo_content");
   Button* comboopen = new Button(btn);
-  comboopen->setMenu(combomenu);
+  comboopen->setMenu(comboMenu);
   // when combo menu opens, set min width to match the box
   comboopen->onPressed = [this](){
     SvgNode* minwidthnode = containerNode()->selectFirst(".combo-menu-min-width");
@@ -640,11 +665,29 @@ ComboBox::ComboBox(SvgNode* n, const std::vector<std::string>& _items) : Widget(
       updateIndex(currIndex + (event->key.keysym.sym == SDLK_UP ? -1 : 1));
       return true;
     }
-    if(event->type == SDL_KEYDOWN || event->type == SDL_KEYUP || event->type == SDL_TEXTINPUT
-        || event->type == SvgGui::FOCUS_GAINED || event->type == SvgGui::FOCUS_LOST)
+    if(SvgGui::isFocusedWidgetEvent(event))
       return comboText->sdlEvent(gui, event);
     return false;
   });
+}
+
+void ComboBox::addItems(const std::vector<std::string>& _items)
+{
+  SvgNode* protonode = comboMenu->containerNode()->selectFirst(".combo_proto");
+  // populate combo dropdown by cloning prototype
+  for(const std::string& s : _items) {
+    int ii = items.size();
+    items.emplace_back(s);
+    Button* btn = new Button(protonode->clone());
+    btn->onClicked = [this, ii](){
+      window()->gui()->closeMenus(comboMenu->parent(), true);
+      updateIndex(ii);
+    };
+    btn->selectFirst("text")->setText(s.c_str());
+    //SvgText* textnode = (SvgText*)item->selectFirst("text"); textnode->clearText(); textnode->addText(s);
+    btn->setVisible(true);  // prototypes have display="none"
+    comboMenu->addWidget(btn);
+  }
 }
 
 void ComboBox::updateIndex(int idx)
@@ -714,9 +757,8 @@ SpinBox::SpinBox(SvgNode* n, real val, real inc, real min, real max, const char*
         spinboxText->setText(s.c_str());
     }
     // don't forward focus event to textedit on mobile if buttons clicked so soft keyboard isn't shown
-    if(event->type == SDL_KEYDOWN || event->type == SDL_KEYUP || event->type == SDL_TEXTINPUT
-        || ((event->type == SvgGui::FOCUS_GAINED || event->type == SvgGui::FOCUS_LOST)
-            && (!PLATFORM_MOBILE || (gui->pressedWidget != incBtn && gui->pressedWidget != decBtn))))
+    if(SvgGui::isFocusedWidgetEvent(event)
+        && (!PLATFORM_MOBILE || (gui->pressedWidget != incBtn && gui->pressedWidget != decBtn)))
       return spinboxText->sdlEvent(gui, event);
     return false;
   });
@@ -794,7 +836,7 @@ void Slider::updateValue(real value)
   real oldval = sliderPos;
   setValue(value);
   if(onValueChanged && sliderPos != oldval)
-    onValueChanged(value);
+    onValueChanged(sliderPos);
 }
 
 Slider::Slider(SvgNode* n) : Widget(n), sliderPos(0)
@@ -802,7 +844,9 @@ Slider::Slider(SvgNode* n) : Widget(n), sliderPos(0)
   sliderBg = new Widget(containerNode()->selectFirst(".slider-bg"));
   sliderHandle = new Button(containerNode()->selectFirst(".slider-handle"));
   // prevent global layout when moving slider handle - note that container bounds change when handle moves
-  selectFirst(".slider-handle-container")->setLayoutIsolate(true);
+  Widget* handleContainer = selectFirst(".slider-handle-container");
+  if(handleContainer)
+    handleContainer->setLayoutIsolate(true);
 
   sliderHandle->addHandler([this](SvgGui* gui, SDL_Event* event){
     if(event->type == SDL_FINGERMOTION && gui->pressedWidget == sliderHandle) {
@@ -852,18 +896,29 @@ Splitter::Splitter(SvgNode* n, SvgNode* sizer, SizerPosition pos, real minsize)
 
   addHandler([this](SvgGui* gui, SDL_Event* event){
     if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
-      Rect r = sizingRectNode->bounds();
-      initialSize = (sizerPos == LEFT || sizerPos == RIGHT) ? r.width() : r.height();
-      initialPos = (sizerPos == LEFT || sizerPos == RIGHT) ? event->tfinger.x : event->tfinger.y;  //gui->currInputPoint.x : gui->currInputPoint.y;
+      initialSize = -1;
+      initialPos = Point(event->tfinger.x, event->tfinger.y);
       gui->setPressed(this);
       return true;
     }
     if(event->type == SDL_FINGERMOTION && gui->pressedWidget == this) {
-      Point p = Point(event->tfinger.x, event->tfinger.y);  //gui->currInputPoint;
-      if(sizerPos == LEFT) setSplitSize(initialSize + (p.x - initialPos));
-      else if(sizerPos == TOP) setSplitSize(initialSize + (p.y - initialPos));
-      else if(sizerPos == RIGHT) setSplitSize(initialSize + (initialPos - p.x));
-      else if(sizerPos == BOTTOM) setSplitSize(initialSize + (initialPos - p.y));
+      if(gui->fingerClicks > 0) return true;  // require minimum drag distance to activate
+      Point p = Point(event->tfinger.x, event->tfinger.y);
+      if(initialSize < 0) {  // first drag point?
+        Point dr = p - initialPos;
+        bool horz = sizerPos == LEFT || sizerPos == RIGHT;
+        // require drag primarily along correct direction to activate
+        if((std::abs(dr.y) < std::abs(dr.x)) != horz) {
+          gui->pressedWidget = NULL;
+          return false;
+        }
+        Rect r = sizingRectNode->bounds();
+        initialSize = horz ? r.width() : r.height();
+      }
+      if(sizerPos == LEFT) setSplitSize(initialSize + (p.x - initialPos.x));
+      else if(sizerPos == TOP) setSplitSize(initialSize + (p.y - initialPos.y));
+      else if(sizerPos == RIGHT) setSplitSize(initialSize + (initialPos.x - p.x));
+      else if(sizerPos == BOTTOM) setSplitSize(initialSize + (initialPos.y - p.y));
       return true;
     }
     return false;
@@ -873,7 +928,7 @@ Splitter::Splitter(SvgNode* n, SvgNode* sizer, SizerPosition pos, real minsize)
 void Splitter::setSplitSize(real size)
 {
   bool horz = sizerPos == LEFT || sizerPos == RIGHT;
-  size = std::max(minSize, size);
+  currSize = std::max(minSize, size);
   if(sizingRectNode->hasExt())  // may not have ext yet
     static_cast<Widget*>(sizingRectNode->ext())->setLayoutTransform(Transform2D());
   // hack to handle global scale != 1
@@ -881,9 +936,11 @@ void Splitter::setSplitSize(real size)
   Rect r1 = sizingRectNode->bounds();
   //Rect handle = node->bounds();
   // if you want to include handle size, must also include in initialSize
-  real w = horz ? size * r0.width()/r1.width() : r0.width();  // size - handle.width()/2
-  real h = horz ? r0.height() : size * r0.height()/r1.height();  // size - handle.height()/2
+  real w = horz ? currSize * r0.width()/r1.width() : r0.width();  // size - handle.width()/2
+  real h = horz ? r0.height() : currSize * r0.height()/r1.height();  // size - handle.height()/2
   sizingRectNode->setRect(Rect::ltwh(r0.left, r0.top, w, h));
+  if(onSplitChanged)
+    onSplitChanged(currSize);
 }
 
 void Splitter::setDirection(SizerPosition pos)
@@ -909,7 +966,7 @@ void Splitter::setDirection(SizerPosition pos)
 // - to force readjust, SvgDocument::setWidth/setHeight with widthPercent=true can be called
 // - this involves a bit of an abuse of standard meaning of <svg> attributes; we could consider using a
 //  separate attribute, e.g. scroll=fit-contents, or overflow-x/-y
-// Scrolling is accomplished by using layout transform is used to translate the contents <g>.  Previously,
+// Scrolling is accomplished by using layout transform to translate the contents <g>.  Previously,
 //  viewBox on <svg> was used, but SvgDocument doesn't properly support viewBox yet (e.g., it is not included
 //  in transformedBounds() because it isn't applied in applyStyle).  For layout, layout transforms on
 //  contents and container are cleared.
@@ -917,17 +974,21 @@ void Splitter::setDirection(SizerPosition pos)
 ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), contents(_contents)
 {
   // TODO: if we follow the model of the other widget classes, this should use selectFirst() to find contents!
+  doc->addClass("scroll-widget");
   addWidget(contents);
   yHandle = new Widget(widgetNode("#scroll-handle"));
   addWidget(yHandle);
   yHandle->updateLayoutVars();  // this caching is stupid
 
   // overlay widget to intercept events
-  Widget* overlay = createFillRect(false);
-  addWidget(overlay);
+  //Widget* overlay = createFillRect(false);
+  //overlay->isEventFilter = true;
+  //addWidget(overlay);
   isFocusable = true;
 
-  addHandler([this, overlay](SvgGui* gui, SDL_Event* event) {
+  // putting handler on overlay instead of ScrollWidget prevents events sent to content from filtering back
+  //  up to handler; for the same reason, we set ScrollWidget as pressedWidget instead of overlay
+  addHandler([this](SvgGui* gui, SDL_Event* event) {
     if(event->type == SDL_KEYDOWN) {
       if(event->key.keysym.sym == SDLK_PAGEUP)
         scroll(Point(0, node->bounds().height()));
@@ -941,99 +1002,30 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         return false;
       return true;
     }
-    else if(event->type == SvgGui::OUTSIDE_PRESSED)
-      return overlay->sdlEvent(gui, event);
-    return false;
-  });
-
-  // putting handler on overlay instead of ScrollWidget prevents events sent to content from filtering back
-  //  up to handler; for the same reason, we set ScrollWidget as pressedWidget instead of overlay
-  overlay->addHandler([this, overlay](SvgGui* gui, SDL_Event* event) {
     if(event->type == SDL_MOUSEWHEEL) {
       scroll(Point(0, event->wheel.y/12.0));  // wheel.x,y are now multiplied by 120
       if(flingV != Point(0, 0)) {
         flingV = Point(0, 0);
-        gui->removeTimer(overlay);  //this);
+        gui->removeTimer(this);  //this);
       }
       return true;
     }
     if(event->type == SDL_FINGERDOWN || isLongPressOrRightClick(event)) {
-      prevPos = Point(event->tfinger.x, event->tfinger.y);
-      prevEventTime = event->tfinger.timestamp;
-      initialPos = prevPos;
-      // what if we don't clear flingV here, so user can keep accelerate scrolling?
-      if(flingV != Point(0, 0)) {
-        flingV = Point(0, 0);
-        gui->removeTimer(overlay);  //this);
-      }
-
-      // should only happen for long press
-      if(tappedWidget) {
-        tappedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
-        tappedWidget = NULL;
-      }
-      // cut and paste from SvgGui::widgetAt()
-      SvgNode* cnode = contents->containerNode()->nodeAt(initialPos, false);
-      while(cnode && !cnode->hasExt())
-        cnode = cnode->parent();
-      if(cnode)
-        gui->sendEvent(window(), static_cast<Widget*>(cnode->ext()), event);
-
-      // an alternative approach is to send SVG_GUI_ENTER to widget underneath on press (after setting
-      //  pressedWidget), then SVG_GUI_LEAVE to cancel, and FINGERDOWN + FINGERUP to simulate click
-      if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
-        tappedWidget = gui->pressedWidget;
-        gui->hoveredWidget = overlay;  // prevent SVG_GUI_LEAVE from being sent to tappedWidget
-        gui->setPressed(this);
-      }
-      return true;
-      // we could consider a slight delay so item is never highlighted when scrolling, e.g., wait for first
-      //  FINGERMOTION event and calculate velocity - only send mouse down if velocity is below some threshold
-    }
-    if(event->type == SDL_FINGERMOTION && event->tfinger.touchId != SDL_TOUCH_MOUSEID && gui->pressedWidget == this) {
-      Point pos = Point(event->tfinger.x, event->tfinger.y);
-      scroll(pos - prevPos);
-      real dt = event->tfinger.timestamp - prevEventTime;  // mSecSinceEpoch() doesn't seem any better
-      if(dt > 1) {
-        // single pole IIR low pass with time constant flingAvgMs
-        Point vel = (pos - prevPos)/dt;
-        real d = exp(-dt/flingAvgMs);  //pow(flingAvgCoeff, dt);
-        flingV = d*flingV + (1 - d)*vel;
-      }
-      prevPos = pos;
-      prevEventTime = event->tfinger.timestamp;
-      if(tappedWidget && gui->fingerClicks < 1) {  //totalFingerDist >= 20) {
-        tappedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
-        tappedWidget = NULL;
-      }
+      gui->pressedWidget = this;
       return true;
     }
-    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED) {
-      if(event->type == SDL_FINGERUP && gui->fingerClicks > 0) {  //gui->totalFingerDist < 20 &&
-        // cancel any panning
-        scroll(initialPos - prevPos);
-        // send mouse click to widget under (initial) touch point
-        if(tappedWidget) {
-          gui->setPressed(tappedWidget);
-          // TODO: this could potentially delete widget/dialog, so we must not access any members after!
-          gui->sendEvent(window(), tappedWidget, event);  //gui->widgetAt(win, prevPos)
-          //gui->setPressed(this);  -- doesn't seem to be necessary
-        }
-      }
-      else {
-        if(tappedWidget)
-          tappedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
+    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+      if(gui->pressedWidget == this) {
+        flingV = window()->gui()->flingV/1000;  // convert from secs to ms
         flingV.x = (scrollX > scrollLimits.left && scrollX < scrollLimits.right) ? flingV.x : 0;
         flingV.y = (scrollY > scrollLimits.top && scrollY < scrollLimits.bottom) ? flingV.y : 0;
         // only fling along one axis (zero the smaller component of flingV); not sure about this
         flingV = std::abs(flingV.x) > std::abs(flingV.y) ? Point(flingV.x, 0) : Point(0, flingV.y);
-        if(flingV.dist() > minFlingV) {
-          gui->setTimer(flingTimerMs, overlay);  //this);
-          return true;
-        }
+        if(flingV.dist() > minFlingV)
+          gui->setTimer(flingTimerMs, this);
+        else
+          flingV = Point(0, 0);
       }
-      flingV = Point(0, 0);
-      tappedWidget = NULL;
       return true;
     }
     if(event->type == SvgGui::TIMER) {
@@ -1054,6 +1046,71 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     return false;
   });
 
+  // event filter should always forward to normal widget so that state handling (hovered, pressed,
+  //  modal, etc.) in SvgGui::sendEvent() is not bypassed
+  eventFilter = [this](SvgGui* gui, Widget* widget, SDL_Event* event) {
+    // TODO: delay forwarding press event so that widget doesn't become pressed if we're just scrolling
+    if(event->type == SDL_FINGERDOWN || isLongPressOrRightClick(event)) {
+      prevPos = Point(event->tfinger.x, event->tfinger.y);
+      //prevEventTime = event->tfinger.timestamp;
+      initialPos = prevPos;
+      // what if we don't clear flingV here, so user can keep accelerate scrolling?
+      if(flingV != Point(0, 0)) {
+        flingV = Point(0, 0);
+        gui->removeTimer(this);
+      }
+      return false;  // forward event
+    }
+
+    if(event->type == SDL_FINGERMOTION && gui->pressedWidget && gui->pressedWidget->isDescendantOf(this)) {
+      Point pos = Point(event->tfinger.x, event->tfinger.y);
+      Point dr = pos - initialPos;
+      if(gui->pressedWidget != this) {
+        if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
+            || (scrollLimits.height() == 0 && dr.y >= 2*dr.x)) {
+          if(gui->sendEvent(window(), widget, event))
+            return true;
+        }
+        if(gui->fingerClicks < 1) {
+          gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
+          gui->pressedWidget = this;
+        }
+      }
+      scroll(pos - prevPos);
+      prevPos = pos;
+      return true;
+    }
+
+    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+      if(!gui->pressedWidget) return false;
+      if(event->type == SDL_FINGERUP && gui->fingerClicks > 0) {  //gui->totalFingerDist < 20 &&
+        // cancel any panning
+        scroll(initialPos - prevPos);
+        flingV = Point(0, 0);
+        gui->sendEvent(window(), widget, event);
+      }
+      else {
+        if(gui->pressedWidget != this) {
+          gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
+          gui->pressedWidget = this;
+        }
+        gui->sendEvent(window(), this, event);
+      }
+      // take focus if tappedWidget didn't
+      Widget* focused = window()->focusedWidget;
+      if(!focused || !focused->isDescendantOf(this))
+        gui->setFocused(this);
+      return true;
+    }
+
+    // allow use of modifier key to pass wheel event to underlying widget
+    bool wheelnomod = !PLATFORM_MOBILE && event->type == SDL_MOUSEWHEEL && !(event->wheel.direction >> 16);
+    if(wheelnomod)  //gui->pressedWidget == this ||
+      return gui->sendEvent(window(), this, event);  // send event to ScrollWidget normally
+
+    return false;  //forwardEvent(gui, event, gui->prevFingerPos);
+  };
+
   contents->onApplyLayout = [this](const Rect& src, const Rect& dest) {
     Rect bbox = node->bounds();  // <svg> bounds
     scrollLimits = Rect::ltrb(0, 0,
@@ -1070,7 +1127,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     return false;  // allow applyLayout to proceed
   };
 
-  onApplyLayout = [this, doc, overlay](const Rect& src, const Rect& dest){
+  onApplyLayout = [this, doc](const Rect& src, const Rect& dest){
     // only for first layout
     bool hfit = doc->width().isPercent() && (layBehave & LAY_HFILL) != LAY_HFILL;
     bool vfit = doc->height().isPercent() && (layBehave & LAY_VFILL) != LAY_VFILL;
@@ -1098,9 +1155,9 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     Rect bbox = node->bounds();
     m_layoutTransform.translate(dest.left - bbox.left, dest.top - bbox.top);
     node->invalidate(true);
-    if(!overlay->layoutVarsValid)  // this caching is stupid
-      overlay->updateLayoutVars();
-    overlay->setLayoutBounds(dest);
+    //if(!overlay->layoutVarsValid)  // this caching is stupid
+    //  overlay->updateLayoutVars();
+    //overlay->setLayoutBounds(dest);
     return true;
   };
 
@@ -1128,6 +1185,15 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   };
 }
 
+bool ScrollWidget::forwardEvent(SvgGui* gui, SDL_Event* event, Point pos)
+{
+  SvgNode* cnode = contents->containerNode()->nodeAt(pos, false);
+  while(cnode && !cnode->hasExt())
+    cnode = cnode->parent();
+  Widget* target = cnode ? static_cast<Widget*>(cnode->ext()) : this;
+  return gui->sendEvent(window(), target, event);
+}
+
 void ScrollWidget::scroll(Point dr)
 {
   setScrollPos(Point(scrollX, scrollY) - dr);
@@ -1150,12 +1216,12 @@ void ScrollWidget::setScrollPos(Point r)
   contents->setLayoutTransform(Transform2D().translate(scrollX-newx, scrollY-newy) * contents->layoutTransform());
   scrollX = newx;
   scrollY = newy;
+  if(onScroll)
+    onScroll();
 }
 
-Dialog::Dialog(SvgDocument* n, bool reversebtns) : Window(n)
+Dialog::Dialog(SvgDocument* n) : Window(n)
 {
-  if(reversebtns)
-    selectFirst(".dialog-buttons")->node->setAttribute("flex-direction", "row-reverse");
   addHandler([this](SvgGui*, SDL_Event* event){
     if(event->type == SvgGui::SCREEN_RESIZED) {
       Rect newsize = static_cast<Rect*>(event->user.data1)->toSize();
@@ -1202,17 +1268,26 @@ SvgDocument* setupWindowNode(SvgDocument* doc)
   doc->setAttribute("box-anchor", "fill");
   if(windowClass && windowClass[0])
     doc->addClass(windowClass);
+
+  SvgDefs* defs = static_cast<SvgDefs*>(widgetDoc->selectFirst("defs"));
+  if(defs)
+    doc->addChild(defs->clone(), doc->firstChild());
+
   if(!doc->stylesheet())
-    doc->setStylesheet(new SvgCssStylesheet);
-  doc->stylesheet()->parse_stylesheet(styleCSS);
-  doc->stylesheet()->sort_rules();
+    doc->setStylesheet(widgetStyle);
   doc->restyle();
   return doc;
 }
 
-SvgDocument* createDialogNode()
+SvgDocument* createDialogNode(bool reversebtns)
 {
-  return setupWindowNode(static_cast<SvgDocument*>(widgetNode("#dialog")));
+  SvgDocument* node = setupWindowNode(static_cast<SvgDocument*>(widgetNode("#dialog")));
+  if(reversebtns) {
+    SvgNode* btnnode = node->selectFirst(".dialog-buttons");
+    if(btnnode)
+      btnnode->setAttribute("flex-direction", "row-reverse");
+  }
+  return node;
 }
 
 Dialog* createDialog(const char* title, const SvgNode* icon)
@@ -1225,4 +1300,22 @@ Dialog* createDialog(const char* title, const SvgNode* icon)
 SvgDocument* createWindowNode(const char* svg)
 {
   return setupWindowNode(SvgParser().parseString(svg));
+}
+
+// Widget w/ custom painting
+CustomWidget::CustomWidget() : Widget(new SvgCustomNode), mBounds(Rect::wh(200, 200))
+{
+  onApplyLayout = [this](const Rect& src, const Rect& dest){
+    mBounds = dest.toSize();
+    if(src != dest) {
+      m_layoutTransform.translate(dest.left - src.left, dest.top - src.top);
+      node->invalidate(true);
+    }
+    return true;
+  };
+}
+
+Rect CustomWidget::bounds(SvgPainter* svgp) const
+{
+  return svgp->p->getTransform().mapRect(mBounds);
 }

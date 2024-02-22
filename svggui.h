@@ -7,16 +7,10 @@
 #include "svggui_platform.h"
 
 // https://github.com/randrew/layout - based on https://bitbucket.org/duangle/oui-blendish
+//extern "C" {
 #define LAY_FLOAT 1
 #define LAY_ASSERT ASSERT
-#ifdef _MSC_VER
-// compiled as C++ on Windows
-#include "layout/layout.h"
-#else
-extern "C" {
-#include "layout/layout.h"
-}
-#endif
+#include "layout.h"
 
 class Window;
 class SvgGui;
@@ -45,8 +39,7 @@ public:
   void setLayoutIsolate(bool isolate) { layoutIsolate = isolate; }
   virtual void updateLayoutVars();
 
-  // experimental
-  void setText(const char* s);  // consider removing since we have TextBox class now
+  virtual void setText(const char* s);  // consider removing since we have TextBox class now
   Widget* selectFirst(const char* selector) const;
   std::vector<Widget*> select(const char* selector) const;
   void addWidget(Widget* child);
@@ -57,6 +50,7 @@ public:
   void removeFromParent();
   enum WidgetClass_t { WidgetClass, AbsPosWidgetClass, WindowClass };
   virtual WidgetClass_t widgetClass() const { return WidgetClass; }
+  bool isDescendantOf(Widget* parent) const;
 
   // this might be overkill - could just use void* for user data and require user handle deletion
   // ... user may not want Widget to delete the userdata!
@@ -75,6 +69,7 @@ public:
   bool sdlUserEvent(SvgGui* gui, Uint32 type, Sint32 code = 0, void* data1 = NULL, void* data2 = NULL);
 
   std::vector< std::function<bool(SvgGui*, SDL_Event*)> > sdlHandlers;
+  std::function<bool(SvgGui*, Widget*, SDL_Event*)> eventFilter;
 
   //Rect layoutBounds;
   void setLayoutBounds(const Rect& dest);
@@ -115,7 +110,7 @@ public:
   Rect shadowBounds(Rect b) const { return b.pad(shadowSpread).pad(0.5*shadowBlur + 1).translate(shadowDx, shadowDy); }
   bool hasShadow() const { return shadowSpread > 0 || shadowBlur > 0; }
 
-  Point calcOffset(const Rect& parentbbox) const;
+  virtual Point calcOffset(const Rect& parentbbox) const;  // allow overriding for more complex positioning
   void updateLayoutVars() override;
   WidgetClass_t widgetClass() const override { return AbsPosWidgetClass; }
 };
@@ -182,7 +177,7 @@ public:
   void showMenu(Widget* menu);
   void closeMenus(const Widget* parent_menu = NULL, bool closegroup = false);
   void showContextMenu(Widget* menuext, const Point& p, const Widget* parent_menu = NULL, bool make_pressed = true);
-  //bool isInCurrMenuTree(Widget* menu) { isDescendent(menu, getPressedGroupContainer(menuStack.front())); }
+  //bool isInCurrMenuTree(Widget* menu) { isDescendant(menu, getPressedGroupContainer(menuStack.front())); }
 
   void onHideWidget(Widget* widget);
   void deleteWidget(Widget* node);
@@ -196,16 +191,19 @@ public:
 
   Window* windowfromSDLID(Uint32 id);
   Widget* widgetAt(Window* win, Point p);
+  Rect getScreenRect() const { return windows.empty() ? Rect() : windows.front()->winBounds(); }
   bool processTimers();
   bool sdlEvent(SDL_Event* event);
+  bool sendEventFilt(Window* win, Widget* widget, SDL_Event* event);
   bool sendEvent(Window* win, Widget* widget, SDL_Event* event);
   bool sdlTouchEvent(SDL_Event* event);
   bool sdlMouseEvent(SDL_Event* event);
   bool sdlWindowEvent(SDL_Event* event);
-  void updateClicks(SDL_Event* event);
+  void updateGestures(SDL_Event* event);
   // text input
   void startTextInput(Widget* w) { nextInputWidget = w; }
   void stopTextInput() { nextInputWidget = NULL; }
+  void setImeText(const char* text, int selStart, int selEnd);
 
   Timer* setTimer(int msec, Widget* widget, const std::function<int()>& callback = NULL);
   Timer* setTimer(int msec, Widget* widget, Timer* oldtimer, const std::function<int()>& callback);
@@ -216,9 +214,11 @@ public:
   static void delayDeleteWin(Window* win);
   static void pushUserEvent(Uint32 type, Sint32 code, void* data1 = NULL, void* data2 = NULL);
 
-  static const SvgDocument* useFile(const char* filename);
+  static const SvgDocument* useFile(const char* filename, std::unique_ptr<SvgDocument> pdoc = {});
   // should this be a standalone fn?  or moved to widgets.cpp?
   static void setupRightClick(Widget* itemext, const std::function<void(SvgGui*, Widget*, Point)>& callback);
+  static bool isFocusedWidgetEvent(SDL_Event* event);
+  static Widget* findNextFocusable(Widget* parent, Widget* curr, bool reverse);
 
   std::vector<Window*> windows;
 
@@ -238,12 +238,17 @@ public:
   Timestamp nextTimeout = MAX_TIMESTAMP;
   std::list<Timer> timers;
 
+  // set this if entire screen needs to be repainted if anything dirty (e.g. when drawing directly to
+  //  screen instead of intermediate framebuffer) - if nothing dirty, user can just call endFrame() again
+  bool fullRedraw = false;
+
   static bool debugLayout;
   static bool debugDirty;
 
   // Should we move outside SvgGui and add "UGUI_" prefix instead?
   enum EventTypes { TIMER=0x9001, LONG_PRESS, MULTITOUCH, ENTER, LEAVE, FOCUS_GAINED, FOCUS_LOST,
-      OUTSIDE_MODAL, OUTSIDE_PRESSED, ENABLED, DISABLED, VISIBLE, INVISIBLE, SCREEN_RESIZED, DELETE_WINDOW };
+      OUTSIDE_MODAL, OUTSIDE_PRESSED, ENABLED, DISABLED, VISIBLE, INVISIBLE, SCREEN_RESIZED, DELETE_WINDOW,
+      KEYBOARD_HIDDEN, IME_TEXT_UPDATE };
 
   static constexpr Uint32 LONGPRESSID = SDL_TOUCH_MOUSEID - 2;
   static constexpr Uint32 LONGPRESSALTID = SDL_TOUCH_MOUSEID - 3;
@@ -256,14 +261,16 @@ public:
   real paintScale = 1;
   Point prevFingerPos;
   real totalFingerDist = 0;
-  Timestamp fingerEventTime = 0;
+  Timestamp fingerUpDnTime = 0;
   int fingerClicks = 0;
   bool multiTouchActive = false;
   bool penDown = false;
   std::vector<SDL_Finger> touchPoints;
+  std::list<SDL_Finger> prevPoints;
+  Point flingV;
   Timer* longPressTimer = NULL;
   Rect closedWindowBounds;
+  std::vector<Widget*> filterWidgets;
 };
 
-bool isDescendent(Widget* child, Widget* parent);
 bool isLongPressOrRightClick(SDL_Event* event);

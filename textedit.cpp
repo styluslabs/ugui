@@ -18,7 +18,7 @@
 #define STB_TEXTEDIT_K_SHIFT           0x20000000
 #define STB_TEXTEDIT_K_CONTROL         0x10000000
 
-#define STB_TEXTEDIT_STRINGLEN(tc)     ((tc)->u32string().size())
+#define STB_TEXTEDIT_STRINGLEN(tc)     ((int)(tc)->u32string().size())
 #define STB_TEXTEDIT_LAYOUTROW         TextEdit::stbLayout
 #define STB_TEXTEDIT_GETWIDTH          TextEdit::stbCharWidth  // can just set to (1) for monospaced
 #define STB_TEXTEDIT_KEYTOTEXT(key)    (((key) & KEYDOWN_BIT) ? 0 : (key))
@@ -53,15 +53,16 @@
 TextEdit::TextEdit(SvgNode* n) : TextBox(n)
 {
   isFocusable = true;
-  //textNode = static_cast<SvgText*>(structureNode()->selectFirst("text"));
+  textNode = static_cast<SvgText*>(containerNode()->selectFirst(".textedit-text"));
   cursor = new Widget(containerNode()->selectFirst(".text-cursor"));
   selectionBGRect = static_cast<SvgRect*>(containerNode()->selectFirst(".text-selection-bg"));
+  emptyTextNode = static_cast<SvgText*>(containerNode()->selectFirst(".textedit-empty-text"));
 
   stb_textedit_initialize_state(&stbState, true);  // single line = true
   addHandler([this](SvgGui* gui, SDL_Event* event){ return sdlEventFn(gui, event); });
 
   // context menu
-  contextMenu = createMenu(Menu::VERT_RIGHT, false);
+  contextMenu = createMenu(Menu::FLOATING, false);
   Button* ctxCut = createMenuItem("Cut");
   ctxCut->onClicked = [this](){ doCut(true); doUpdate(); };
   Button* ctxCopy = createMenuItem("Copy");
@@ -168,6 +169,8 @@ void TextEdit::setText(const char* s)
   stbState.select_start = 0;
   std::u32string text32 = utf8_to_utf32(cleanText(s).c_str());
   stb_textedit_paste(this, &stbState, text32.data(), text32.size());
+  // move cursor to beginning so beginning of string is visible
+  stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_LINESTART);
   textChanged = SET_TEXT_CHANGE;
   doUpdate();
 }
@@ -256,13 +259,13 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     SDL_Keycode key = event->key.keysym.sym;
     Uint16 mods = event->key.keysym.mod;
     // we should probably modify stb_textedit_key to return false if key ignored
-    if(key == SDLK_ESCAPE || key == SDLK_RETURN)
+    if(key == SDLK_ESCAPE || key == SDLK_RETURN || key == SDLK_TAB || key == SDLK_PRINTSCREEN)
       return false;
     if(isReadOnly() && (key == SDLK_DELETE || key == SDLK_BACKSPACE))
       return true;
     if(mods & KMOD_CTRL && key == SDLK_v)
       doPaste();
-    else if(mods & KMOD_CTRL && key == SDLK_c )
+    else if(mods & KMOD_CTRL && key == SDLK_c)
       doCopy(false);
     else if(mods & KMOD_CTRL && key == SDLK_x)
       doCut(false);
@@ -292,9 +295,32 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
       stb_textedit_key(this, &stbState, c);
     showLastChar = true;
   }
+  else if(event->type == SvgGui::IME_TEXT_UPDATE) {
+    // for mobile (i.e. soft keyboard), easier to just send entire contents when changed
+    std::u32string text32 = utf8_to_utf32((const char*)event->user.data1);
+    if(text32 != currText) {
+      // use stb_textedit API so undo information is saved
+      size_t ii = 0;
+      while(ii < text32.size() && ii < currText.size() && text32[ii] == currText[ii]) ++ii;
+      stbState.select_start = ii;
+      stbState.select_end = currText.size();
+      stbState.cursor = stbState.select_end;
+      if(ii < text32.size())
+        stb_textedit_paste(this, &stbState, &text32[ii], text32.size() - ii);
+      else
+        stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_DELETE);
+    }
+    uintptr_t packedSel = (uintptr_t)event->user.data2;
+    stbState.select_start = packedSel & 0xFFFF;
+    stbState.select_end = packedSel >> 16;
+    stbState.cursor = stbState.select_end;
+    textChanged = IME_TEXT_CHANGE;
+  }
   else if(event->type == SvgGui::FOCUS_GAINED) {
-    if(!isReadOnly())
+    if(!isReadOnly()) {
+      gui->setImeText(utf32_to_utf8(currText).c_str(), stbState.select_start, stbState.select_end);
       gui->startTextInput(this);
+    }
     cursor->setVisible(true);
     gui->setTimer(700, this);
     return true;
@@ -314,6 +340,10 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
       doUpdate();
     }
     return true;
+  }
+  else if(event->type == SvgGui::KEYBOARD_HIDDEN) {
+    Widget* fw = window()->focusedWidget;  // should never be NULL, but check just in case
+    gui->setFocused(fw ? fw->parent() : window());  // unfocus so that user can tap again to show keyboard
   }
   else
     return false;
@@ -338,7 +368,14 @@ void TextEdit::doUpdate()
 {
   int selmin = std::min(stbState.select_start, stbState.select_end);
   int selmax = std::max(stbState.select_start, stbState.select_end);
-  if(textChanged > LAYOUT_TEXT_CHANGE || selStart != stbState.select_start || selEnd != stbState.select_end) {
+  bool selChanged = selStart != stbState.select_start || selEnd != stbState.select_end;
+  bool hasOrHadSel = selStart != selEnd || stbState.select_start != stbState.select_end;
+  // keep select_start/_end valid even when no selection present (stb_textedit does not)
+  if(stbState.select_start == stbState.select_end) {
+    stbState.select_start = stbState.cursor;
+    stbState.select_end = stbState.cursor;
+  }
+  if(textChanged > LAYOUT_TEXT_CHANGE || (selChanged && hasOrHadSel)) {
     textNode->clearText();
     // handle password edit mode
     std::u32string passText;
@@ -372,13 +409,19 @@ void TextEdit::doUpdate()
     else if(!displayText.empty())
       textNode->addText(utf32_to_utf8(displayText).c_str());
 
-    selStart = stbState.select_start;
-    selEnd = stbState.select_end;
+    emptyTextNode->setDisplayMode(displayText.empty() ? SvgNode::BlockMode : SvgNode::NoneMode);
+
+    if(textChanged < IME_TEXT_CHANGE) {
+      Window* win = window();
+      if(win && win->gui() && win->gui()->currInputWidget == this)
+        win->gui()->setImeText(utf32_to_utf8(currText).c_str(), stbState.select_start, stbState.select_end);
+    }
   }
+  selStart = stbState.select_start;
+  selEnd = stbState.select_end;
 
   if(textChanged) {
-    Painter p;
-    glyphPos = SvgPainter(&p).glyphPositions(textNode);
+    glyphPos = SvgDocument::sharedBoundsCalc->glyphPositions(textNode);
 
     if(stbState.select_start != stbState.select_end) {
       real startpos = selmin > 0 ? glyphPos.at(selmin - 1).right : 0;
@@ -388,7 +431,7 @@ void TextEdit::doUpdate()
     else
       selectionBGRect->setRect(Rect::wh(0, 20));
   }
-  // would it be better to just use the acutal glyph "positions" instead of glyph bboxes (would need to
+  // would it be better to just use the actual glyph "positions" instead of glyph bboxes (would need to
   //  change Painter::glyphPositions)?
   if(glyphPos.size() == currText.size()) {
     real pos0 = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
@@ -400,7 +443,7 @@ void TextEdit::doUpdate()
   }
   else
     ASSERT(0 && "Number of glyphs does not equal number of characters - bad unicode?");
-  if(textChanged == USER_TEXT_CHANGE && onChanged)
+  if(textChanged >= USER_TEXT_CHANGE && onChanged)
     onChanged(text().c_str());
   textChanged = NO_TEXT_CHANGE;
 }
@@ -452,7 +495,8 @@ SvgNode* textEditInnerNode()
           <rect fill="none" width="1" height="20"/>
           <rect class="text-selection-bg" width="0" height="20"/>
         </g>
-        <text class="textbox-text" box-anchor="left" margin="4 6"></text>
+        <text class="textedit-empty-text weak" box-anchor="left" margin="4 6"></text>
+        <text class="textedit-text" box-anchor="left" margin="4 6"></text>
         <!-- set left margin of cursor equal to that of text node -->
         <g box-anchor="left vfill" margin="6 0 6 6">
           <!-- invisible rect to set left edge of box so text-cursor can move freely -->
@@ -503,7 +547,15 @@ SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* f
   SpinBox* spinBox = new SpinBox(spinBoxNode, val, inc, min, max, format);
   spinBox->isFocusable = true;
   textEdit->isFocusable = false;
-  textEdit->onChanged = [spinBox](const char* s){ spinBox->updateValueFromText(s); };
+  //textEdit->onChanged = [spinBox](const char* s){ spinBox->updateValueFromText(s); };
+  spinBox->addHandler([=](SvgGui* gui, SDL_Event* event){
+    if(event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_RETURN) {
+      spinBox->updateValueFromText(textEdit->text().c_str());
+      return true;
+    }
+    return false;
+  });
+
   if(minwidth > 0)
     setMinWidth(spinBox, minwidth);
   return spinBox;

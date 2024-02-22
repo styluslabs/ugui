@@ -1,6 +1,7 @@
 // glfwSDL.c - translate GLFW events to SDL events as needed for ugui
 // note that mouse events are translated to touch events with SDL_TOUCH_MOUSEID as used in ugui
 
+#include <string.h>
 #include "glfwSDL.h"
 
 static int keyMap[GLFW_KEY_LAST+1];
@@ -200,15 +201,17 @@ static void glfwSDLOnMouseButton(GLFWwindow *window, int button, int action, int
   glfwSDLEvent(&event);
 }
 
+#include <math.h>
+
 static void glfwSDLOnScroll(GLFWwindow *window, double xoffset, double yoffset)
 {
   SDL_Event event = {0};
   event.type = SDL_MOUSEWHEEL;
   event.wheel.windowID = 0;  //mouse->focus ? mouse->focus->id : 0;
   event.wheel.which = 0;  //mouseID;
-  event.wheel.x = (int)(xoffset + 0.5);
-  event.wheel.y = (int)(yoffset + 0.5);
-  event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+  event.wheel.x = round(xoffset);  //(int)(xoffset + 0.5);
+  event.wheel.y = round(yoffset);  //(int)(yoffset + 0.5);
+  event.wheel.direction = SDL_MOUSEWHEEL_NORMAL | (SDL_GetModState() << 16);
   glfwSDLEvent(&event);
 }
 
@@ -317,6 +320,7 @@ void glfwSDLInit(GLFWwindow* win)
 // and we need to add glfwSetPlatformEventCallback() ...
 
 #include <limits.h>
+#include <string.h>
 
 Uint32 SDL_GetTicks() { return ((1000*glfwGetTimerValue())/glfwGetTimerFrequency())%UINT_MAX; } //(Uint32)((1000*glfwGetTime())%UINT_MAX); }
 
@@ -334,6 +338,13 @@ SDL_bool SDL_HasClipboardText() { return glfwGetClipboardString(mainWindow) != N
 int SDL_SetClipboardText(const char* text) { glfwSetClipboardString(mainWindow, text); return 0; }
 void SDL_free(void* mem) { free(mem); }
 
+SDL_Keymod SDL_GetModState()
+{
+  return (SDL_Keymod)((glfwGetKey(mainWindow, GLFW_KEY_LEFT_SHIFT) || glfwGetKey(mainWindow, GLFW_KEY_RIGHT_SHIFT) ? KMOD_SHIFT : 0)
+      | (glfwGetKey(mainWindow, GLFW_KEY_LEFT_CONTROL) || glfwGetKey(mainWindow, GLFW_KEY_RIGHT_CONTROL) ? KMOD_CTRL : 0)
+      | (glfwGetKey(mainWindow, GLFW_KEY_LEFT_ALT) || glfwGetKey(mainWindow, GLFW_KEY_RIGHT_ALT) ? KMOD_ALT : 0));
+}
+
 // no IME support in GLFW
 void SDL_SetTextInputRect(SDL_Rect* rect) {}
 SDL_bool SDL_IsTextInputActive() { return SDL_FALSE; }
@@ -347,4 +358,16 @@ void SDL_GetWindowPosition(SDL_Window* win, int* x, int* y) { glfwGetWindowPos((
 void SDL_DestroyWindow(SDL_Window* win) { glfwDestroyWindow((GLFWwindow*)win); }
 SDL_Window* SDL_GetWindowFromID(Uint32 id) { return (SDL_Window*)mainWindow; }
 
-int SDL_PushEvent(SDL_Event* event) { return 0; }
+int SDL_PushEvent(SDL_Event* event) { glfwSDLEvent(event); return 1; }
+
+int SDL_PeepEvents(SDL_Event* events, int numevents, SDL_eventaction action, Uint32 minType, Uint32 maxType)
+{
+  if(action != SDL_ADDEVENT) return 0;
+  for(int ii = 0; ii < numevents; ++ii)
+    glfwSDLEvent(&events[ii]);
+  return numevents;
+}
+
+// functions typically use in render loop
+//void SDL_GL_GetDrawableSize(SDL_Window* win, int* w, int* h) { glfwGetFramebufferSize((GLFWwindow*)win, w, h); }
+//void SDL_GL_SwapWindow(SDL_Window* win) { glfwSwapBuffers((GLFWwindow*)win); }

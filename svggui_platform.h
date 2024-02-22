@@ -19,5 +19,7 @@
 
 // this is a hack related to our workarounds for poll+sleep insanity in SDL_WaitEvent()
 extern void PLATFORM_WakeEventLoop();
+// some soft keyboard functionality depends on knowing TextEdit contents
+extern void PLATFORM_setImeText(const char* text, int selStart, int selEnd);
 
 #endif

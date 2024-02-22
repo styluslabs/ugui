@@ -13,10 +13,11 @@ class TextEdit : public TextBox
 public:
   TextEdit(SvgNode* n);
   void setText(const char* s) override;
-  std::string text() const;
+  std::string text() const override;
   const std::u32string& u32string() const { return currText; }
   bool isEditable() const override { return true; }
   void selectAll();
+  void setEmptyText(const char* s) { emptyTextNode->setText(s); }
 
   static void stbLayout(StbTexteditRow* row, TextEdit* self, int start_i);
   static float stbCharWidth(TextEdit* self, int line_start_idx, int char_idx);
@@ -41,6 +42,7 @@ private:
   Button* ctxPaste;
   Widget* cursor;
   SvgRect* selectionBGRect;
+  SvgText* emptyTextNode;
   std::u32string currText;
   std::vector<Rect> glyphPos;
   int textChanged = 0;
@@ -52,7 +54,7 @@ private:
   bool showLastChar = false;  // for password edit
   STB_TexteditState stbState;
 
-  enum { NO_TEXT_CHANGE = 0, LAYOUT_TEXT_CHANGE, SET_TEXT_CHANGE, USER_TEXT_CHANGE };
+  enum { NO_TEXT_CHANGE = 0, LAYOUT_TEXT_CHANGE, SET_TEXT_CHANGE, USER_TEXT_CHANGE, IME_TEXT_CHANGE };
 };
 
 SvgNode* textEditInnerNode();

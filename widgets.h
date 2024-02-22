@@ -80,10 +80,11 @@ void setupMenuItem(Button* btn);
 class Menu : public AbsPosWidget
 {
 public:
-  enum Align { HORZ=1<<0, VERT=1<<1, LEFT=1<<2, RIGHT=1<<3,
-      VERT_RIGHT = VERT|RIGHT, VERT_LEFT=VERT|LEFT, HORZ_RIGHT=HORZ|RIGHT, HORZ_LEFT=HORZ|LEFT } mAlign;
+  enum Align { FLOATING=0, HORZ=1<<0, VERT=1<<1, LEFT=1<<2, RIGHT=1<<3, ABOVE=1<<4,
+      VERT_RIGHT = VERT|RIGHT, VERT_LEFT=VERT|LEFT, HORZ_RIGHT=HORZ|RIGHT, HORZ_LEFT=HORZ|LEFT };
+  int mAlign = 0;
 
-  Menu(SvgNode* n, Align align);
+  Menu(SvgNode* n, int align);
 
   void addItem(Button* btn) { setupMenuItem(btn);  addWidget(btn); }
   Button* addItem(const char* name, const SvgNode* icon, const std::function<void()>& callback);
@@ -93,7 +94,8 @@ public:
   void addWidget(Widget* item) { selectFirst(".child-container")->addWidget(item); }
   Button* addSubmenu(const char* title, Menu* submenu);
   void addSeparator();
-  void setAlign(Align align);
+  void setAlign(int align);
+  Point calcOffset(const Rect& pb) const override;
 
   bool autoClose = false;
 };
@@ -121,13 +123,25 @@ class TextBox : public Widget
 {
 public:
   TextBox(SvgNode* n);
-  virtual void setText(const char* s);
+  void setText(const char* s) override { textNode->setText(s); }
   virtual bool isEditable() const { return false; }
-  std::string text() { return textNode->text(); }
+  virtual std::string text() const { return textNode->text(); }
 
 protected:
   SvgText* textNode;
 };
+
+class TextLabel : public TextBox
+{
+public:
+  TextLabel(SvgNode* n);
+  void setText(const char* s) override { origText = s; TextBox::setText(s); }
+  std::string text() const override { return origText; }
+
+protected:
+  std::string origText;
+};
+
 
 class ComboBox : public Widget
 {
@@ -139,10 +153,12 @@ public:
   void setIndex(int idx);
   void updateIndex(int idx);
   void updateFromText(const char* s);
+  void addItems(const std::vector<std::string>& _items);
 
   std::function<void(const char*)> onChanged;
 
 private:
+  Menu* comboMenu;
   TextBox* comboText;
   std::string currText;
   int currIndex;
@@ -159,6 +175,7 @@ public:
   bool setValue(real val);
   void updateValue(real val);
   bool updateValueFromText(const char* s);
+  void setLimits(real min, real max) { m_min = min; m_max = max; }
 
   std::function<real(int nsteps)> onStep;
   std::function<void(real value)> onValueChanged;
@@ -181,13 +198,12 @@ public:
   //~Slider();
 
   void setValue(real value);
+  void updateValue(real value);
   real value() const { return sliderPos; }
 
   std::function<void(real value)> onValueChanged;
 
-private:
-  void updateValue(real value);
-
+protected:
   real sliderPos;
   Widget* sliderBg;
   Widget* sliderHandle;
@@ -198,14 +214,17 @@ class Splitter : public Widget
 public:
   enum SizerPosition {LEFT, TOP, RIGHT, BOTTOM} sizerPos;
   real minSize;
+  real currSize = 0;
+  real initialSize;  // size at start of current gesture
 
   Splitter(SvgNode* n, SvgNode* sizer, SizerPosition pos = LEFT, real minsize = 1);
   void setSplitSize(real size);
   void setDirection(SizerPosition pos);
 
+  std::function<void(real value)> onSplitChanged;
+
 private:
-  real initialPos;
-  real initialSize;
+  Point initialPos;
   SvgRect* sizingRectNode;
 };
 
@@ -221,27 +240,28 @@ public:
   Widget* yHandle;
   real scrollX = 0;
   real scrollY = 0;
+  Rect scrollLimits;
+
+  std::function<void()> onScroll;
+
 private:
   void setScrollPos(Point r);
+  bool forwardEvent(SvgGui* gui, SDL_Event* event, Point pos);
 
-  Rect scrollLimits;
-  real flingAvgMs = 50;  // ms
   real flingDrag = 0;
   real flingDecel = 100*1E-6;  // pix per ms per ms
   real minFlingV = 200*1E-3;  // pix per ms
-  real flingTimerMs = 50;
+  real flingTimerMs = 32;  // ~30fps
   Point flingV;
 
   Point initialPos;
   Point prevPos;
-  real prevEventTime = 0;
-  Widget* tappedWidget = NULL;
 };
 
 class Dialog : public Window
 {
 public:
-  Dialog(SvgDocument* n, bool reversebtns = PLATFORM_MOBILE);
+  Dialog(SvgDocument* n);
 
   void finish(int res);
   Button* addButton(const char* title, const std::function<void()>& callback);
@@ -274,15 +294,26 @@ private:
   void show(Widget* tooltip, Point p, int align);
 };
 
-void setGuiResources(const char* svg, const char* css);
+class CustomWidget : public Widget
+{
+public:
+  CustomWidget();
+  Rect bounds(SvgPainter* svgp) const override;
+  void draw(SvgPainter* svgp) const override = 0;
+
+  Rect mBounds;
+};
+
+void setGuiResources(SvgDocument* svg, SvgCssStylesheet* css);
 void setWindowXmlClass(const char* winclass);
 SvgNode* widgetNode(const char* sel);
 SvgNode* loadSVGFragment(const char* svg);
-SvgDocument* createDialogNode();
+SvgDocument* createDialogNode(bool reversebtns = PLATFORM_MOBILE);
+SvgDocument* setupWindowNode(SvgDocument* doc);
 SvgDocument* createWindowNode(const char* svg = R"#(<svg class="window" layout="box"></svg>)#");
 
 // should we do, e.g., CheckBox::create() instead of createCheckBox()?
-Menu* createMenu(Menu::Align align, bool showicons = true);
+Menu* createMenu(int align, bool showicons = true);
 Button* createMenuItem(const char* title, const SvgNode* icon = NULL);
 Button* createCheckBoxMenuItem(const char* title, const char* cbnode = "#checkbox");
 Button* createMenuItem(Widget* contents);

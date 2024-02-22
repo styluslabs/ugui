@@ -4,10 +4,9 @@
 #include "usvg/svgpainter.h"
 #include "usvg/svgwriter.h"
 
-// included here because of config defines, e.g., LAY_FLOAT; upstream has changed to single header anyway
-#define restrict __restrict
-#include "layout/layout.c"
-#undef restrict
+#define LAY_IMPLEMENTATION
+#define LAY_FORCE_INLINE  // we don't need aggressive inlineing
+#include "layout.h"
 
 #ifdef SVGGUI_MULTIWINDOW
 #error "Fix multiwindow for touch events, etc."
@@ -36,7 +35,7 @@ static Widget* commonParent(const Widget* wa, const Widget* wb)
   return p ? static_cast<Widget*>(p->ext()) : NULL;
 }
 
-bool isDescendent(Widget* child, Widget* parent)
+static bool isDescendant(const Widget* child, const Widget* parent)
 {
   if(!child || !parent)
     return false;
@@ -49,6 +48,8 @@ bool isDescendent(Widget* child, Widget* parent)
   }
   return false;
 }
+
+bool Widget::isDescendantOf(Widget* parent) const { return isDescendant(this, parent); }
 
 static Widget* getPressedGroupContainer(Widget* widget)
 {
@@ -82,8 +83,10 @@ void Widget::setEnabled(bool enabled)
     node->addClass("disabled");
   // don't like using window()->gui(), but don't want to require SvgGui::setEnabled(Widget*)
   Window* win = window();
-  if(win && win->gui())
-    sdlUserEvent(window()->gui(), enabled ? SvgGui::ENABLED : SvgGui::DISABLED);
+  if(win && win->gui()) {
+    win->gui()->onHideWidget(this);  // this seems appropriate since disabled widget can't receive events
+    sdlUserEvent(win->gui(), enabled ? SvgGui::ENABLED : SvgGui::DISABLED);
+  }
   m_enabled = enabled;
 }
 
@@ -130,11 +133,8 @@ Widget* Widget::parent() const
 
 Window* Widget::window() const
 {
-  Widget* win = const_cast<Widget*>(this);
-  Widget* w;
-  while((w = win->parent()))
-    win = w;
-  return win && win->node->type() == SvgNode::DOC ? static_cast<Window*>(win) : NULL;
+  SvgDocument* root = node->rootDocument();
+  return root ? static_cast<Window*>(root->ext(false)) : NULL;
 }
 
 // experimental
@@ -193,6 +193,7 @@ Point AbsPosWidget::calcOffset(const Rect& parentbbox) const
 void Widget::addWidget(Widget* child)
 {
   ASSERT(containerNode() && "cannot add widget to non-container node");
+  ASSERT(!child->parent() && "Widget already has parent");
   containerNode()->addChild(child->node);
   // should we allow chaining?
   //return *this;
@@ -555,7 +556,7 @@ void SvgGui::removeTimer(Widget* w)
 void SvgGui::removeTimers(Widget* w, bool children)
 {
   if(children)
-    timers.remove_if([w](const Timer& timer) { return isDescendent(timer.widget, w); });
+    timers.remove_if([w](const Timer& timer) { return isDescendant(timer.widget, w); });
   else
     timers.remove_if([w](const Timer& timer) { return timer.widget == w; });
 }
@@ -573,7 +574,7 @@ static lay_id prepareLayout(lay_context* ctx, Widget* ext)
   Rect bbox;
   if(ext->onPrepareLayout)
     bbox = ext->onPrepareLayout();
-  else if(node->asContainerNode() && (ext->layContain & Widget::LAYX_HASLAYOUT)) { //node->hasAttribute("layout")) {
+  if(!bbox.isValid() && node->asContainerNode() && (ext->layContain & Widget::LAYX_HASLAYOUT)) { //node->hasAttribute("layout")) {
     for(SvgNode* child : node->asContainerNode()->children()) {
       if(!child->isVisible() || child->displayMode() == SvgNode::AbsoluteMode)
         continue;
@@ -818,7 +819,7 @@ void SvgGui::closeMenus(const Widget* parent_menu, bool closegroup)
   }
 
   Window* win = windows.back();  // menuStack.empty() ? windows.back() : menuStack.back()->window();
-  if(win->focusedWidget && (menuStack.empty() || isDescendent(win->focusedWidget, menuStack.back()))) {
+  if(win->focusedWidget && (menuStack.empty() || win->focusedWidget->isDescendantOf(menuStack.back()))) {
     win->focusedWidget->sdlUserEvent(this, FOCUS_GAINED);
     win->focusedWidget->node->addClass("focused");
   }
@@ -943,9 +944,7 @@ void SvgGui::showWindow(Window* win, Window* parent, bool showModal, Uint32 flag
 
   if(showModal) {
     // clear pressedWidget and hoveredWidget
-    onHideWidget(parent);  // this must happen before setting window disabled so events propagate!
-    //parent->setEnabled(false);  // this will show overlay if configured in CSS
-    //parent->m_enabled = false;
+    onHideWidget(parent);
     parent->node->setDirty(SvgNode::PIXELS_DIRTY);
     win->setModal(true);
     parent->rootWindow()->setModalChild(win);
@@ -1003,13 +1002,18 @@ void SvgGui::showModal(Window* modal, Window* parent)
   showWindow(modal, parent, true);
 }
 
+void SvgGui::setImeText(const char* text, int selStart, int selEnd)
+{
+  PLATFORM_setImeText(text, selStart, selEnd);
+}
+
 // in the future this will also be called, e.g., when tabbing through widgets
 // focus event is sent only to focusedWidget; if it has any focusable sub-widgets (e.g. spin box), it is
 //  responsible for forwarding focus events as needed
 bool SvgGui::setFocused(Widget* widget)
 {
   Window* win = widget->window();
-  while(widget && !widget->isFocusable)
+  while(widget && !(widget->isFocusable && widget->isEnabled()))
     widget = widget->parent();
   if(win->focusedWidget == widget)
     return true;
@@ -1060,20 +1064,20 @@ void SvgGui::hoveredLeave(Widget* widget, Widget* topWidget, SDL_Event* event)
 // should we include setVisible(false) and rename to "hideWidget"?
 void SvgGui::onHideWidget(Widget* widget)
 {
-  if(hoveredWidget && isDescendent(hoveredWidget, widget))
+  if(hoveredWidget && hoveredWidget->isDescendantOf(widget))
     hoveredLeave(widget->parent());
-  if(pressedWidget && isDescendent(pressedWidget, widget))
+  if(pressedWidget && pressedWidget->isDescendantOf(widget))
     pressedWidget = NULL;
 
   Window* win = widget->window();
-  if(win->focusedWidget && isDescendent(win->focusedWidget, widget)) {
+  if(win->focusedWidget && win->focusedWidget->isDescendantOf(widget)) {
     win->focusedWidget->sdlUserEvent(this, FOCUS_LOST, 0, widget != win ? win : NULL);
     win->focusedWidget->node->removeClass("focused");
     // if hiding window, focusedWidget will be restored when reshown
     if(widget != win)
       win->focusedWidget = NULL;
   }
-  while(!menuStack.empty() && isDescendent(menuStack.back(), widget)) {
+  while(!menuStack.empty() && menuStack.back()->isDescendantOf(widget)) {
     // we must pop menu stack before calling setVisible, since that calls onHideWidget!
     Widget* menu = menuStack.back();
     menuStack.pop_back();
@@ -1110,6 +1114,10 @@ void SvgGui::deleteContents(Widget* widget, const char* sel)
 Window* SvgGui::windowfromSDLID(Uint32 id)
 {
   SDL_Window* sdlwin = SDL_GetWindowFromID(id);
+#ifndef SVGGUI_MULTIWINDOW
+  if(!sdlwin && !windows.empty())  // support non-SDL window management
+    return windows.front();
+#endif
   for(Window* win : windows) {
     if(win->sdlWindow == sdlwin)
       return win;
@@ -1222,6 +1230,32 @@ bool SvgGui::processTimers()
   return true;
 }
 
+static void getFocusableWidgets(Widget* parent, std::vector<Widget*>& res)
+{
+  auto& siblings = parent->containerNode()->children();
+  for(auto it = siblings.begin(); it != siblings.end(); ++it) {
+    if(!(*it)->hasExt()) continue;
+    Widget* w = static_cast<Widget*>((*it)->ext());
+    if(w->isFocusable)
+      res.push_back(w);
+    else if(w->node->asContainerNode())
+      getFocusableWidgets(w, res);
+  }
+}
+
+Widget* SvgGui::findNextFocusable(Widget* parent, Widget* curr, bool reverse)
+{
+  std::vector<Widget*> focusables;
+  getFocusableWidgets(parent, focusables);
+  size_t n = focusables.size();
+  if(n < 2) return NULL;
+  for(size_t ii = 0; ii < n; ++ii) {
+    if(focusables[ii] == curr)
+      return focusables[(ii + (reverse ? n - 1 : 1))%n];
+  }
+  return NULL;
+}
+
 Widget* SvgGui::widgetAt(Window* win, Point p)
 {
   // absolutely positioned nodes may extend outside the bounds of the window (e.g. combo menu in modal)
@@ -1250,24 +1284,54 @@ Widget* SvgGui::widgetAt(Window* win, Point p)
   return node ? static_cast<Widget*>(node->ext()) : NULL;
 }
 
-void SvgGui::updateClicks(SDL_Event* event)
+void SvgGui::updateGestures(SDL_Event* event)
 {
+  static constexpr size_t MAX_PREV_INPUT = 12;
+  static constexpr float MIN_INPUT_DT = 0.005;
+  static constexpr float FLING_AVG_SECS = 0.05;
+  static constexpr float MIN_FLING_SECS = 0.03;
+  static constexpr real MIN_FLING_DIST = 40;  // user can check totalFingerDist if larger threshold desired
+  static constexpr real MAX_CLICK_DIST = 20;
+  static constexpr int MAX_CLICK_MSEC = 400;
+
   Point p(event->tfinger.x, event->tfinger.y);
+  Uint32 t = event->tfinger.timestamp;
   if(event->type == SDL_FINGERDOWN) {
-    fingerClicks = event->tfinger.timestamp - fingerEventTime < 400 ? fingerClicks + 1 : 1;
+    // fling
+    flingV = {0, 0};
+    prevPoints.clear();
+    prevPoints.push_back({event->tfinger.fingerId, float(p.x), float(p.y), 0});
+    // click ... if time between up and next down is too short, don't count as separate click
+    fingerClicks = t - fingerUpDnTime < MAX_CLICK_MSEC ? (t - fingerUpDnTime < 40 ? fingerClicks : fingerClicks + 1) : 1;
     totalFingerDist = 0;
-    fingerEventTime = event->tfinger.timestamp;
+    fingerUpDnTime = t;
   }
   else if(event->type == SDL_FINGERMOTION) {
+    // fling ... I think FIR type filter is more robust to input timing variation then IIR type
+    float trel = (t - fingerUpDnTime)/1000.0f;  // seconds relative to finger down time
+    while(prevPoints.size() > 1 && trel - prevPoints.back().pressure < MIN_INPUT_DT)
+      prevPoints.pop_back();
+    while(prevPoints.size() >= MAX_PREV_INPUT)
+      prevPoints.pop_front();
+    prevPoints.push_back({event->tfinger.fingerId, float(p.x), float(p.y), trel});
+    // click
     totalFingerDist += p.dist(prevFingerPos);
-    if(totalFingerDist >= 20 || event->tfinger.timestamp - fingerEventTime >= 400)
+    if(totalFingerDist >= MAX_CLICK_DIST || t - fingerUpDnTime >= MAX_CLICK_MSEC)
       fingerClicks = 0;
   }
   else if(event->type == SDL_FINGERUP) {
-    if(totalFingerDist >= 20 || event->tfinger.timestamp - fingerEventTime >= 400)
+    // fling
+    float trel = (t - fingerUpDnTime)/1000.0f;  // seconds relative to finger down time
+    if(totalFingerDist > MIN_FLING_DIST && trel > MIN_FLING_SECS) {
+      auto it = --prevPoints.end();
+      while(it != prevPoints.begin() && trel - it->pressure < FLING_AVG_SECS) --it;
+      flingV = (p - Point(it->x, it->y))/(trel - it->pressure);
+    }
+    // click
+    if(totalFingerDist >= MAX_CLICK_DIST || t - fingerUpDnTime >= MAX_CLICK_MSEC)
       fingerClicks = 0;
     totalFingerDist = 0;
-    fingerEventTime = event->tfinger.timestamp;
+    fingerUpDnTime = t;
   }
   prevFingerPos = p;
 }
@@ -1292,10 +1356,10 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
   event->tfinger.y = p.y;
   event->tfinger.dx *= inputScale;  // touch area major, minor axes - used for palm rejection
   event->tfinger.dy *= inputScale;
-  updateClicks(event);
+  updateGestures(event);
   // allow platform interface to send mouse events as finger events
   if(event->tfinger.touchId == SDL_TOUCH_MOUSEID)
-    return sendEvent(win, widgetAt(win, p), event);
+    return sendEventFilt(win, widgetAt(win, p), event);
 
   bool isPen = event->tfinger.touchId == PenPointerPen || event->tfinger.touchId == PenPointerEraser;
   if(!isPen || event->type == SVGGUI_FINGERCANCEL) {
@@ -1345,7 +1409,7 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
 
       // clear pressedWidget if it does not accept initial multitouch event
       if(!wasMultiTouch && pressedWidget) {
-        if(sendEvent(win, widget, &mtevent)) {
+        if(sendEventFilt(win, widget, &mtevent)) {
           if(event->type == SVGGUI_FINGERCANCEL && itTouchPoint != touchPoints.end())
             touchPoints.erase(itTouchPoint);
           return true;
@@ -1357,7 +1421,7 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
         // fall-through to send multitouch again
       }
 
-      bool res = sendEvent(win, widget, &mtevent);
+      bool res = sendEventFilt(win, widget, &mtevent);
       // now we can erase released touch point
       if((event->type == SDL_FINGERUP || event->type == SVGGUI_FINGERCANCEL) && itTouchPoint != touchPoints.end())
         touchPoints.erase(itTouchPoint);
@@ -1393,7 +1457,7 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
       longpress.tfinger.x = p.x;
       longpress.tfinger.y = p.y;
       longpress.tfinger.pressure = 1;
-      sendEvent(win, widget, const_cast<SDL_Event*>(&longpress));
+      sendEventFilt(win, widget, const_cast<SDL_Event*>(&longpress));
       return 0;  // single shot timer
     });
   }
@@ -1407,7 +1471,7 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
   // as a convienence, we'll let platform interface send fingerId = 0 or SDL_BUTTON_LMASK for pen down
   if(isPen && (penDown || event->type == SDL_FINGERUP) && event->tfinger.fingerId == 0)
     event->tfinger.fingerId = SDL_BUTTON_LMASK;
-  return sendEvent(win, widget, event);
+  return sendEventFilt(win, widget, event);
 }
 
 bool SvgGui::sdlMouseEvent(SDL_Event* event)
@@ -1422,7 +1486,7 @@ bool SvgGui::sdlMouseEvent(SDL_Event* event)
     p = Point(event->button.x, event->button.y);
     // button up outside window should be an "OUTSIDE_PRESSED" event
     if(!win && pressedWidget && event->type == SDL_MOUSEBUTTONUP)
-      return sendEvent(pressedWidget->window(), pressedWidget->window(), event);
+      return sendEventFilt(pressedWidget->window(), pressedWidget->window(), event);
   }
   else if(event->type == SDL_MOUSEMOTION) {
     if(event->motion.which == SDL_TOUCH_MOUSEID)
@@ -1439,7 +1503,7 @@ bool SvgGui::sdlMouseEvent(SDL_Event* event)
     p = prevFingerPos;
     win = event->wheel.windowID ? windowfromSDLID(event->wheel.windowID) : windows.front();
     win = win->modalOrSelf();
-    return sendEvent(win, widgetAt(win, p), event);
+    return sendEventFilt(win, widgetAt(win, p), event);
   }
 
   // We seem to occasionally receive mouse down events with window id = 0 (indicating no window has mouse focus)
@@ -1472,8 +1536,16 @@ bool SvgGui::sdlMouseEvent(SDL_Event* event)
     fevent.tfinger.type = SDL_FINGERMOTION;
     fevent.tfinger.fingerId = event->motion.state;
   }
-  updateClicks(&fevent);
-  return sendEvent(win, widgetAt(win, p), &fevent);
+  updateGestures(&fevent);
+  return sendEventFilt(win, widgetAt(win, p), &fevent);
+}
+
+bool SvgGui::isFocusedWidgetEvent(SDL_Event* event)
+{
+  // note that focus gained/lost events here are for other uses, not relevant to use in SvgGui::sdlEvent()
+  return event->type == SDL_KEYDOWN || event->type == SDL_KEYUP || event->type == SDL_TEXTINPUT
+      || event->type == KEYBOARD_HIDDEN || event->type == IME_TEXT_UPDATE
+      || event->type == SvgGui::FOCUS_GAINED || event->type == SvgGui::FOCUS_LOST;
 }
 
 bool SvgGui::sdlEvent(SDL_Event* event)
@@ -1484,12 +1556,12 @@ bool SvgGui::sdlEvent(SDL_Event* event)
   if(event->type == SDL_MOUSEBUTTONDOWN || event->type == SDL_MOUSEMOTION
       || event->type == SDL_MOUSEBUTTONUP || event->type == SDL_MOUSEWHEEL)
     return sdlMouseEvent(event);
-  if(event->type == SDL_KEYDOWN || event->type == SDL_KEYUP || event->type == SDL_TEXTINPUT) {
+  if(isFocusedWidgetEvent(event)) {
     Window* win = windowfromSDLID(event->key.windowID);
     win = (win ? win : windows.front())->modalOrSelf();
-    bool sendToFocused = menuStack.empty() || isDescendent(win->focusedWidget, menuStack.back());
+    bool sendToFocused = menuStack.empty() || isDescendant(win->focusedWidget, menuStack.back());
     // widget = NULL will send to menu (modalWidget in sendEvent)
-    return sendEvent(win, sendToFocused ? win->focusedWidget : NULL, event);
+    return sendEventFilt(win, sendToFocused ? win->focusedWidget : NULL, event);
   }
   if(event->type == DELETE_WINDOW) {
     // although deleting a Window inside SvgGui event handler is safe, delayed delete option provided for
@@ -1504,6 +1576,27 @@ bool SvgGui::sdlEvent(SDL_Event* event)
   if(!windows.empty())
     return windows.front()->sdlEvent(this, event);  // main window processes application messages
   return false;
+}
+
+bool SvgGui::sendEventFilt(Window* win, Widget* widget, SDL_Event* event)
+{
+  Widget* filtwidget = widget ? widget : win;
+  while(filtwidget) {
+    if(filtwidget->eventFilter)  //&& filtwidget != pressedWidget
+      filterWidgets.push_back(filtwidget);
+    filtwidget = filtwidget->parent();
+  }
+  //if(pressedWidget && pressedWidget->eventFilter)
+  //  filterWidgets.push_back(pressedWidget);
+  // call event filters from top-most widget down until one accepts event
+  for(size_t ii = filterWidgets.size(); ii-- > 0;) {
+    if(filterWidgets[ii]->eventFilter(this, widget, event)) {
+      filterWidgets.clear();
+      return true;
+    }
+  }
+  filterWidgets.clear();
+  return sendEvent(win, widget, event);
 }
 
 bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
@@ -1528,7 +1621,7 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
     if(widget != hoveredWidget) {
       Widget* parent = (widget && hoveredWidget) ? commonParent(widget, hoveredWidget) : NULL;
       hoveredLeave(parent, topWidget, event);
-      if(!widget || (topWidget && !isDescendent(widget, topWidget)))
+      if(!widget || (topWidget && !widget->isDescendantOf(topWidget)))
         hoveredWidget = NULL;
       else {
         SDL_Event enterleave = {0};
@@ -1551,7 +1644,7 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
   }
 
   if(pressedWidget) {
-    if(widget && isDescendent(widget, pressedWidget)) {
+    if(widget && widget->isDescendantOf(pressedWidget)) {
       bool accepted = false;
       while(widget && !(accepted = widget->sdlEvent(this, event)) && widget != pressedWidget)
         widget = widget->parent();
@@ -1569,7 +1662,7 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
   }
 
   // event outside modal widget
-  if(modalWidget && (!widget || !isDescendent(widget, modalWidget))) {
+  if(modalWidget && (!widget || !widget->isDescendantOf(modalWidget))) {
     if(event->type != SDL_FINGERDOWN)
       return true;
     // modal node can swallow event and/or close itself
@@ -1595,8 +1688,8 @@ static void drawShadow(Painter* p, AbsPosWidget* w)
   Gradient grad = Gradient::box(dx, dy, bounds.width(), bounds.height(), 0, w->shadowBlur);
   grad.coordMode = Gradient::userSpaceOnUseMode;
   //grad.setObjectBBox(Rect::ltwh(d, props.height, props.width, d));
-  grad.setColorAt(0, c);
-  grad.setColorAt(1, c.setAlphaF(0));
+  grad.addStop(0, c);
+  grad.addStop(1, c.setAlphaF(0));
   p->setFillBrush(&grad);
   p->drawRect(shdbnds);
   p->restore();
@@ -1707,7 +1800,7 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
     }
     return ii;  // = 0
   };
-  size_t ii = debugDirty ? 0 : findDirtyCover(dirty, layoutidx);  // layoutidx is bottommost window updated
+  size_t ii = debugDirty || fullRedraw ? 0 : findDirtyCover(dirty, layoutidx);  // layoutidx is bottommost window updated
 
   // ... then draw that window and those above it
   painter->beginFrame();
@@ -1716,8 +1809,8 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
 
   // Painter aligns clip rect w/ pixel boundaries, but we want to do it here to get basis for dirty rect
   Rect dirtypx = Rect(dirty).pad(1).scale(paintScale).round().rectIntersect(painter->deviceRect);
-  Rect cliprect = Rect(debugDirty ? painter->deviceRect : dirtypx).scale(1/paintScale);
-  if(!Painter::glRender)
+  Rect cliprect = Rect(debugDirty || fullRedraw ? painter->deviceRect : dirtypx).scale(1/paintScale);
+  if(!painter->usesGPU())
     painter->setClipRect(cliprect);  // not needed for GL renderer since we use glScissor
   cliprect.pad(1);  // I think this assumes paintScale >= 0.5 (not unreasonable)
 
@@ -1760,14 +1853,14 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
 }
 
 // should move this to SvgParser
-const SvgDocument* SvgGui::useFile(const char* filename)
+const SvgDocument* SvgGui::useFile(const char* filename, std::unique_ptr<SvgDocument> pdoc)
 {
   static std::unordered_map<std::string, std::unique_ptr<SvgDocument>> docs;
   auto it = docs.find(filename);
   if(it != docs.end())
     return it->second.get();
 
-  SvgDocument* doc = SvgParser().parseFile(filename);
+  SvgDocument* doc = pdoc ? pdoc.release() : SvgParser().parseFile(filename);
   docs[filename] = std::unique_ptr<SvgDocument>(doc);
   return doc;
 }

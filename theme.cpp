@@ -1,6 +1,6 @@
 // SVG GUI (default) CSS style
 
-const char* defaultStyleCSS = R"#(
+const char* defaultColorsCSS = R"#(
 svg.window  /* :root */
 {
   --dark: #101010;
@@ -37,7 +37,9 @@ svg.window.light
   --icon: #303030;
   --icon-disabled: #A0A0A0;
 }
+)#";
 
+const char* defaultStyleCSS = R"#(
 .menu { fill: var(--light); }
 .menuitem { fill: var(--window); }
 .menuitem.hovered { fill: var(--hovered); }
@@ -116,7 +118,8 @@ text.disabled { fill: var(--light); }
 .checkmark { color: #33B3E3; }
 .checkbox .checkmark { display: none; }
 .checkbox.checked .checkmark { display: block; }
-.checked .checkbox .checkmark { display: block; }
+.cbmenuitem.checked .checkmark { display: block; }
+/*.checked .checkbox .checkmark { display: block; }*/
 
 .slider-handle-outer { fill: grey; }
 .slider-handle-inner { fill: black; }
@@ -125,9 +128,10 @@ text.disabled { fill: var(--light); }
 
 .inputbox-bg { stroke: var(--base); stroke-width: 2; }
 /* previously we used .focused .inputbox-bg, but this created an issue w/ widgets inside a scroll widget */
-.focused > .inputbox-bg { stroke: var(--icon); }
+.inputbox.focused .inputbox-bg { stroke: var(--icon); }
 .text-cursor { fill: var(--icon); }
 tspan.text-selection { fill: var(--text-bg); }
+tspan.weak { fill: var(--text-weak); }
 .text-selection-bg { fill: var(--text); }
 /* margin of .textbox-container must match stroke-width of .inputbox-bg */
 .textbox-container { margin: 0 2; }
@@ -158,6 +162,21 @@ rect.background { shape-rendering: crispEdges; }
 static const char* defaultWidgetSVG = R"#(
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 
+  <defs>
+    <!-- these should be <symbol>s once we move viewBox logic to SvgViewportNode -->
+    <svg id="chevron-left" width="96" height="96" viewBox="0 0 96 96">
+      <polygon points="57.879,18.277 32.223,47.998 57.879,77.723 63.776,72.634 42.512,47.998 63.776,23.372"/>
+    </svg>
+
+    <svg id="chevron-down" width="96" height="96" viewBox="0 0 96 96">
+      <polygon points="72.628,32.223 48.002,53.488 23.366,32.223 18.278,38.121 48.002,63.777 77.722,38.121"/>
+    </svg>
+
+    <svg id="chevron-right" width="96" height="96" viewBox="0 0 96 96">
+      <polygon points="32.223,23.372 53.488,47.998 32.223,72.634 38.121,77.723 63.777,47.998 38.121,18.277"/>
+    </svg>
+  </defs>
+
   <g id="menu" class="menu" display="none" position="absolute" box-anchor="fill" layout="box">
     <rect class="background" box-anchor="fill" width="20" height="20"/>
     <g class="child-container" box-anchor="fill" layout="flex" flex-direction="column">
@@ -171,7 +190,7 @@ static const char* defaultWidgetSVG = R"#(
       <g class="menu-icon-container" layout="box" margin="0 2">
         <!-- invisible rectangle is to fix size even if no icon -->
         <rect fill="none" width="36" height="36"/>
-        <use display="none" class="icon" height="36" xlink:href=""/>
+        <use display="none" class="icon" width="36" height="36" xlink:href=""/>
       </g>
       <text class="title" margin="0 12"></text>
     </g>
@@ -205,7 +224,7 @@ static const char* defaultWidgetSVG = R"#(
     <rect class="background" box-anchor="hfill" width="36" height="42"/>
     <rect class="checkmark" box-anchor="bottom hfill" margin="0 2" fill="none" width="36" height="3"/>
     <g margin="0 3" box-anchor="fill" layout="flex" flex-direction="row">
-      <use class="icon" height="36" xlink:href="" />
+      <use class="icon" width="36" height="36" xlink:href="" />
       <text class="title" display="none" margin="0 9"></text>
     </g>
   </g>
@@ -257,7 +276,7 @@ static const char* defaultWidgetSVG = R"#(
 
       <g class="combo_open" box-anchor="vfill" layout="box">
         <rect fill="none" box-anchor="vfill" width="28" height="28"/>
-        <use class="icon" width="28" height="28" xlink:href=":/icons/chevron_down.svg" />
+        <use class="icon" width="28" height="28" xlink:href="#chevron-down" />
       </g>
     </g>
 
@@ -285,11 +304,11 @@ static const char* defaultWidgetSVG = R"#(
       <!-- inc/dec buttons -->
       <g class="toolbutton spinbox_dec" box-anchor="vfill" layout="box">
         <rect class="background" width="28" height="28"/>
-        <use class="icon" width="28" height="28" xlink:href=":/icons/chevron_left.svg" />
+        <use class="icon" width="28" height="28" xlink:href="#chevron-left" />
       </g>
       <g class="toolbutton spinbox_inc" box-anchor="vfill" layout="box">
         <rect class="background" width="28" height="28"/>
-        <use class="icon" width="28" height="28" xlink:href=":/icons/chevron_right.svg" />
+        <use class="icon" width="28" height="28" xlink:href="#chevron-right" />
       </g>
     </g>
   </g>
