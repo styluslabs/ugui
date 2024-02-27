@@ -386,7 +386,9 @@ void Menu::setAlign(int align)
 
 Button* Menu::addSubmenu(const char* title, Menu* submenu)
 {
-  Button* item = createMenuItem(title);
+  //Button* item = createMenuItem(title);
+  Button* item = new Button(widgetNode("#menuitem-submenu"));
+  item->selectFirst(".title")->setText(title);
   item->setMenu(submenu);
   addItem(item);
   return item;

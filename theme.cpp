@@ -196,6 +196,18 @@ static const char* defaultWidgetSVG = R"#(
     </g>
   </g>
 
+  <g id="menuitem-submenu" class="menuitem" box-anchor="fill" margin="1 0" layout="box">
+    <rect box-anchor="hfill" width="150" height="36"/>
+    <g box-anchor="fill" layout="flex" flex-direction="row">
+      <g class="menu-icon-container" layout="box" margin="0 2">
+        <rect fill="none" width="36" height="36"/>
+      </g>
+      <text class="title" margin="0 12"></text>
+      <rect class="stretch" box-anchor="fill" fill="none" width="20" height="20"/>
+      <use class="icon submenu-indicator" width="28" height="28" xlink:href="#chevron-right" />
+    </g>
+  </g>
+
   <g id="menuitem-custom" class="menuitem" box-anchor="fill" margin="1 0" layout="box">
     <rect box-anchor="hfill" width="150" height="36"/>
     <g class="menuitem-container" box-anchor="fill" layout="box">
