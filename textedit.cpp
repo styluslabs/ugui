@@ -317,6 +317,8 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     textChanged = IME_TEXT_CHANGE;
   }
   else if(event->type == SvgGui::FOCUS_GAINED) {
+    if(event->user.code == SvgGui::REASON_TAB)
+      selectAll();
     if(!isReadOnly()) {
       gui->setImeText(utf32_to_utf8(currText).c_str(), stbState.select_start, stbState.select_end);
       gui->startTextInput(this);
@@ -410,12 +412,6 @@ void TextEdit::doUpdate()
       textNode->addText(utf32_to_utf8(displayText).c_str());
 
     emptyTextNode->setDisplayMode(displayText.empty() ? SvgNode::BlockMode : SvgNode::NoneMode);
-
-    if(textChanged < IME_TEXT_CHANGE) {
-      Window* win = window();
-      if(win && win->gui() && win->gui()->currInputWidget == this)
-        win->gui()->setImeText(utf32_to_utf8(currText).c_str(), stbState.select_start, stbState.select_end);
-    }
   }
   selStart = stbState.select_start;
   selEnd = stbState.select_end;
@@ -443,6 +439,13 @@ void TextEdit::doUpdate()
   }
   else
     ASSERT(0 && "Number of glyphs does not equal number of characters - bad unicode?");
+
+  if((textChanged || selChanged) && textChanged < IME_TEXT_CHANGE) {
+    Window* win = window();
+    if(win && win->gui() && win->gui()->currInputWidget == this)
+      win->gui()->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
+  }
+
   if(textChanged >= USER_TEXT_CHANGE && onChanged)
     onChanged(text().c_str());
   textChanged = NO_TEXT_CHANGE;

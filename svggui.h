@@ -171,7 +171,8 @@ public:
   void showWindow(Window* win, Window* parent, bool showModal = false, Uint32 flags = SDL_WINDOW_RESIZABLE);
   void showModal(Window* modal, Window* parent);
   void closeWindow(Window* win);
-  bool setFocused(Widget* widget);
+  enum FocusReason { REASON_NONE = 0, REASON_PRESSED, REASON_TAB, REASON_WINDOW, REASON_MENU, REASON_HIDDEN };
+  bool setFocused(Widget* widget, FocusReason reason = REASON_NONE);
   void setPressed(Widget* widget);
 
   void showMenu(Widget* menu);

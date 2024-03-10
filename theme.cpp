@@ -204,7 +204,7 @@ static const char* defaultWidgetSVG = R"#(
       </g>
       <text class="title" margin="0 12"></text>
       <rect class="stretch" box-anchor="fill" fill="none" width="20" height="20"/>
-      <use class="icon submenu-indicator" width="28" height="28" xlink:href="#chevron-right" />
+      <use class="icon submenu-indicator" width="24" height="24" xlink:href="#chevron-right" />
     </g>
   </g>
 
