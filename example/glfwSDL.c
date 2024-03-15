@@ -2,6 +2,7 @@
 // note that mouse events are translated to touch events with SDL_TOUCH_MOUSEID as used in ugui
 
 #include <string.h>
+#include <stdlib.h>  // malloc, free
 #include "glfwSDL.h"
 
 static int keyMap[GLFW_KEY_LAST+1];

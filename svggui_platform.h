@@ -1,9 +1,14 @@
 #ifndef SVGGUI_PLATFORM_H
 #define SVGGUI_PLATFORM_H
 
+#ifdef SVGGUI_NO_SDL
+#include "svggui_sdl.h"
+#else
 // must explicitly include SDL_config.h to support generated SDL_config.h on Linux
 #include "SDL_config.h"
 #include "SDL.h"
+#endif
+
 #ifdef main
 #undef main
 #else
