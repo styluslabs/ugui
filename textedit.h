@@ -41,6 +41,8 @@ private:
   Menu* contextMenu;
   Button* ctxPaste;
   Widget* cursor;
+  AbsPosWidget* cursorHandle;
+  AbsPosWidget* selStartHandle;
   SvgRect* selectionBGRect;
   SvgText* emptyTextNode;
   std::u32string currText;

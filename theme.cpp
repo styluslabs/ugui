@@ -130,6 +130,7 @@ text.disabled { fill: var(--light); }
 /* previously we used .focused .inputbox-bg, but this created an issue w/ widgets inside a scroll widget */
 .inputbox.focused .inputbox-bg { stroke: var(--icon); }
 .text-cursor { fill: var(--icon); }
+.cursor-handle { fill: var(--title); }
 tspan.text-selection { fill: var(--text-bg); }
 tspan.weak { fill: var(--text-weak); }
 .text-selection-bg { fill: var(--text); }

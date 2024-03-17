@@ -55,6 +55,8 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
   isFocusable = true;
   textNode = static_cast<SvgText*>(containerNode()->selectFirst(".textedit-text"));
   cursor = new Widget(containerNode()->selectFirst(".text-cursor"));
+  cursorHandle = new AbsPosWidget(containerNode()->selectFirst(".selend-handle"));
+  selStartHandle = new AbsPosWidget(containerNode()->selectFirst(".selstart-handle"));
   selectionBGRect = static_cast<SvgRect*>(containerNode()->selectFirst(".text-selection-bg"));
   emptyTextNode = static_cast<SvgText*>(containerNode()->selectFirst(".textedit-empty-text"));
 
@@ -129,6 +131,38 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
 
     return true;
   };
+
+  cursorHandle->addHandler([this](SvgGui* gui, SDL_Event* event){
+    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
+      gui->setPressed(cursorHandle);
+      cursor->setVisible(true);
+    }
+    else if(event->type == SDL_FINGERMOTION && gui->pressedWidget == cursorHandle) {
+      Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
+      stb_textedit_click(this, &stbState, p.x, p.y);
+      if(selStart != selEnd)
+        stbState.select_start = selStart;
+      doUpdate();
+    }
+    else
+      return false;
+    return true;
+  });
+
+  selStartHandle->addHandler([this](SvgGui* gui, SDL_Event* event){
+    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK)
+      gui->setPressed(selStartHandle);
+    else if(event->type == SDL_FINGERMOTION && gui->pressedWidget == selStartHandle) {
+      Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
+      stb_textedit_click(this, &stbState, p.x, p.y);
+      stbState.select_end = selEnd;
+      stbState.cursor = selEnd;
+      doUpdate();
+    }
+    else
+      return false;
+    return true;
+  });
 }
 
 // MSVC bug
@@ -226,7 +260,8 @@ void TextEdit::doCut(bool cutall)
 bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
 {
   if(event->type == SvgGui::TIMER) {
-    cursor->setVisible(!cursor->isVisible());
+    if(gui->pressedWidget != cursorHandle)
+      cursor->setVisible(!cursor->isVisible());
     return true;
   }
   // all other events (except text input of course) will hide last char for password field
@@ -330,6 +365,7 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   else if(event->type == SvgGui::FOCUS_LOST) {
     if(!isReadOnly())
       gui->stopTextInput();  // hide keyboard on mobile
+    cursorHandle->setVisible(false);
     cursor->setVisible(false);
     gui->removeTimer(this);
     // force update for password edit to hide char
@@ -372,7 +408,7 @@ void TextEdit::doUpdate()
   int selmax = std::max(stbState.select_start, stbState.select_end);
   bool selChanged = selStart != stbState.select_start || selEnd != stbState.select_end;
   bool hasOrHadSel = selStart != selEnd || stbState.select_start != stbState.select_end;
-  // keep select_start/_end valid even when no selection present (stb_textedit does not)
+  // keep select_start/_end valid even when no selection present (stb_textedit does not always do so)
   if(stbState.select_start == stbState.select_end) {
     stbState.select_start = stbState.cursor;
     stbState.select_end = stbState.cursor;
@@ -418,11 +454,16 @@ void TextEdit::doUpdate()
 
   if(textChanged) {
     glyphPos = SvgDocument::sharedBoundsCalc->glyphPositions(textNode);
-
-    if(stbState.select_start != stbState.select_end) {
+    selStartHandle->setVisible(selStart != selEnd);
+    if(selStart != selEnd) {
       real startpos = selmin > 0 ? glyphPos.at(selmin - 1).right : 0;
       real endpos = glyphPos.at(selmax - 1).right;
       selectionBGRect->setRect(Rect::ltrb(startpos, 0, endpos, 20));
+      // handle
+      real pos0 = selStart > 0 ? glyphPos.at(selStart - 1).right : 0;
+      real pos1 = selStart < int(glyphPos.size()) ? glyphPos.at(selStart).left : pos0;
+      real pos = (pos0 + pos1)/2;
+      selStartHandle->node->setAttribute("left", std::to_string(pos-0.5).c_str());
     }
     else
       selectionBGRect->setRect(Rect::wh(0, 20));
@@ -435,7 +476,15 @@ void TextEdit::doUpdate()
     real pos = (pos0 + pos1)/2;
     //Dim pos = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
     cursor->node->setTransform(Transform2D().translate(pos, 0));
+    cursorHandle->node->setAttribute("left", std::to_string(pos-0.5).c_str());
     maxScrollX = glyphPos.empty() ? 0 : glyphPos.back().right;
+    // show handle if selection present or cursor moved; hide when user starts typing
+    if(selStart != selEnd)
+      cursorHandle->setVisible(true);
+    else if(textChanged > LAYOUT_TEXT_CHANGE)
+      cursorHandle->setVisible(false);
+    else if(stbState.cursor < int(glyphPos.size()))
+      cursorHandle->setVisible(true);
   }
   else
     ASSERT(0 && "Number of glyphs does not equal number of characters - bad unicode?");
@@ -506,6 +555,14 @@ SvgNode* textEditInnerNode()
           <rect width="1" height="20" fill="none"/>
           <rect class="text-cursor" display="none" x="-1" y="0" width="1.5" height="20"/>
         </g>
+
+        <g class="selend-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
+          <circle cx="0" cy="0" r="8"/>
+        </g>
+        <g class="selstart-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
+          <circle cx="0" cy="0" r="8"/>
+        </g>
+
       </g>
     </svg>
   )#";
