@@ -348,7 +348,9 @@ Point Menu::calcOffset(const Rect& pb) const
   bool fitleft = (vert ? pb.right : pb.left) - b.width() > 0;
   bool fitright = (vert ? pb.left : pb.right) + b.width() < winb.right;
 
-  if((align & RIGHT && fitright) || !fitleft)
+  if((align & RIGHT) && (align & LEFT))
+    dr.x = pb.center().x - b.width()/2;
+  else if((align & RIGHT && fitright) || !fitleft)
     dr.x = (vert ? pb.left : pb.right) - b.left;
   else
     dr.x = (vert ? pb.right : pb.left) - b.right;

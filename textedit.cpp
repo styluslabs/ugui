@@ -63,8 +63,36 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
   stb_textedit_initialize_state(&stbState, true);  // single line = true
   addHandler([this](SvgGui* gui, SDL_Event* event){ return sdlEventFn(gui, event); });
 
+
+  //static const char* menuItemSvg = R"#(
+  //  <g class="toolbutton" layout="box">
+  //    <rect class="background" box-anchor="hfill" width="36" height="32"/>
+  //    <text class="title" margin="0 9"></text>
+  //  </g>
+  //)#";
+  //
+  //Button* cloned = new Button(loadSVGFragment(menuItemSvg));
+  //Widget* titleExt = cloned->selectFirst(".title");
+  //titleExt->setText(title);
+
+  Toolbar* popup = createToolbar();
+  Button* ctxCut = createToolbutton(NULL, "Cut", true);
+  ctxCut->onClicked = [this](){ doCut(true); doUpdate(); };
+  Button* ctxCopy = createToolbutton(NULL, "Copy", true);
+  ctxCopy->onClicked = [this](){ doCopy(true); };
+  ctxPaste = createToolbutton(NULL, "Paste", true);
+  ctxPaste->onClicked = [this](){ doPaste(); doUpdate(); };
+  popup->addWidget(ctxCut);
+  popup->addWidget(ctxCopy);
+  popup->addWidget(ctxPaste);
+
+  contextMenu = new Menu(loadSVGFragment(
+       "<g class='menu child-container' position='absolute' box-anchor='fill' layout='box'></g>"), Menu::FLOATING);  //Menu::RIGHT | Menu::LEFT);
+  contextMenu->addWidget(popup);
+
+
   // context menu
-  contextMenu = createMenu(Menu::FLOATING, false);
+  /*contextMenu = createMenu(Menu::FLOATING, false);
   Button* ctxCut = createMenuItem("Cut");
   ctxCut->onClicked = [this](){ doCut(true); doUpdate(); };
   Button* ctxCopy = createMenuItem("Copy");
@@ -74,7 +102,7 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
 
   contextMenu->addItem(ctxCut);
   contextMenu->addItem(ctxCopy);
-  contextMenu->addItem(ctxPaste);
+  contextMenu->addItem(ctxPaste);*/
 
   // code for scrolling text wider than box - taken from ScrollWidget
   Widget* contents = selectFirst(".textbox-content");
@@ -144,6 +172,10 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
         stbState.select_start = selStart;
       doUpdate();
     }
+    else if(event->type == SDL_FINGERUP) {
+      if(selStart != selEnd)
+        showMenu(gui);
+    }
     else
       return false;
     return true;
@@ -158,6 +190,10 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
       stbState.select_end = selEnd;
       stbState.cursor = selEnd;
       doUpdate();
+    }
+    else if(event->type == SDL_FINGERUP) {
+      if(selStart != selEnd)
+        showMenu(gui);
     }
     else
       return false;
@@ -256,12 +292,20 @@ void TextEdit::doCut(bool cutall)
   }
 }
 
+void TextEdit::showMenu(SvgGui* gui)
+{
+  Rect b = selectionBGRect->bounds().rectIntersect(node->bounds());
+  real w = std::max(100.0, contextMenu->node->bounds().width());
+  gui->showContextMenu(contextMenu, Point(b.center().x - w/2, b.bottom + 30), NULL, false);
+}
+
 // note we adjust/expect coordinates for stb_textedit to be relative to textNode origin!
 bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
 {
   if(event->type == SvgGui::TIMER) {
+    // if visibility attr was implemented properly, we could use that instead of opacity
     if(gui->pressedWidget != cursorHandle)
-      cursor->setVisible(!cursor->isVisible());
+      cursor->node->setAttr("opacity", cursor->node->getFloatAttr("opacity", 1.0) ? 0.0 : 1.0);
     return true;
   }
   // all other events (except text input of course) will hide last char for password field
@@ -289,6 +333,10 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   else if(event->type == SDL_FINGERMOTION && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
     stb_textedit_drag(this, &stbState, p.x, p.y);
+  }
+  else if(event->type == SDL_FINGERUP) {
+    if(selStart != selEnd)
+      showMenu(gui);
   }
   else if(event->type == SDL_KEYDOWN) {
     SDL_Keycode key = event->key.keysym.sym;
@@ -365,7 +413,6 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   else if(event->type == SvgGui::FOCUS_LOST) {
     if(!isReadOnly())
       gui->stopTextInput();  // hide keyboard on mobile
-    cursorHandle->setVisible(false);
     cursor->setVisible(false);
     gui->removeTimer(this);
     // force update for password edit to hide char
@@ -377,6 +424,8 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
       stbState.select_end = stbState.cursor;
       doUpdate();
     }
+    selStartHandle->setVisible(false);
+    cursorHandle->setVisible(false);
     return true;
   }
   else if(event->type == SvgGui::KEYBOARD_HIDDEN) {
@@ -393,7 +442,6 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     cursor->setVisible(true);
     gui->setTimer(700, this);
   }
-  cursorPos = stbState.cursor;
 
   doUpdate();
   return true;
@@ -404,6 +452,8 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
 //  to end of event handler
 void TextEdit::doUpdate()
 {
+  Window* win = window();
+  SvgGui* gui = win ? win->gui() : NULL;
   int selmin = std::min(stbState.select_start, stbState.select_end);
   int selmax = std::max(stbState.select_start, stbState.select_end);
   bool selChanged = selStart != stbState.select_start || selEnd != stbState.select_end;
@@ -454,7 +504,8 @@ void TextEdit::doUpdate()
 
   if(textChanged) {
     glyphPos = SvgDocument::sharedBoundsCalc->glyphPositions(textNode);
-    selStartHandle->setVisible(selStart != selEnd);
+    if(gui->pressedWidget != selStartHandle)  // don't hide if being dragged
+      selStartHandle->setVisible(selStart != selEnd);
     if(selStart != selEnd) {
       real startpos = selmin > 0 ? glyphPos.at(selmin - 1).right : 0;
       real endpos = glyphPos.at(selmax - 1).right;
@@ -479,25 +530,28 @@ void TextEdit::doUpdate()
     cursorHandle->node->setAttribute("left", std::to_string(pos-0.5).c_str());
     maxScrollX = glyphPos.empty() ? 0 : glyphPos.back().right;
     // show handle if selection present or cursor moved; hide when user starts typing
+    bool cursorMoved = stbState.cursor != cursorPos && textChanged != SET_TEXT_CHANGE;
     if(selStart != selEnd)
       cursorHandle->setVisible(true);
     else if(textChanged > LAYOUT_TEXT_CHANGE)
       cursorHandle->setVisible(false);
-    else if(stbState.cursor < int(glyphPos.size()))
+    else if(cursorMoved && stbState.cursor < int(glyphPos.size()))
       cursorHandle->setVisible(true);
   }
   else
     ASSERT(0 && "Number of glyphs does not equal number of characters - bad unicode?");
 
-  if((textChanged || selChanged) && textChanged < IME_TEXT_CHANGE) {
-    Window* win = window();
-    if(win && win->gui() && win->gui()->currInputWidget == this)
-      win->gui()->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
-  }
+  // menu center aligned w/ center of visible part of selection (typical behavior on Android and iOS)
+  if(selStart != selEnd && !contextMenu->isVisible() && !gui->pressedWidget)
+    showMenu(gui);
+
+  if(gui && gui->currInputWidget == this && (textChanged || selChanged) && textChanged < IME_TEXT_CHANGE)
+    gui->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
 
   if(textChanged >= USER_TEXT_CHANGE && onChanged)
     onChanged(text().c_str());
   textChanged = NO_TEXT_CHANGE;
+  cursorPos = stbState.cursor;
 }
 
 /// Static methods ///

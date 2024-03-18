@@ -37,6 +37,7 @@ private:
   bool doCopy(bool copyall);
   void doCut(bool cutall);
   bool isReadOnly() const { return editMode == READ_ONLY; }
+  void showMenu(SvgGui* gui);
 
   Menu* contextMenu;
   Button* ctxPaste;
