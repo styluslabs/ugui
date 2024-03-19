@@ -54,6 +54,7 @@ private:
   int cursorPos = 0;
   real scrollX = 0;
   real maxScrollX = 0;
+  real scrollXOffset = 0;
   bool showLastChar = false;  // for password edit
   STB_TexteditState stbState;
 

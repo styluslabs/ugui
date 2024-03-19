@@ -151,6 +151,7 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
     else if(pos < scrollX - w)
       scrollX = pos + w;
     scrollX = std::max(w, std::min(scrollX, maxScrollX + cw));
+    scrollXOffset = w;
     contents->setLayoutTransform(Transform2D::translating(w - scrollX, 0) * contents->layoutTransform());
 
     // update glyph positions (in case, e.g., font-size changed)
@@ -163,7 +164,7 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
   cursorHandle->addHandler([this](SvgGui* gui, SDL_Event* event){
     if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
       gui->setPressed(cursorHandle);
-      cursor->setVisible(true);
+      cursor->node->setAttr("opacity", 1.0);
     }
     else if(event->type == SDL_FINGERMOTION && gui->pressedWidget == cursorHandle) {
       Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
@@ -514,7 +515,8 @@ void TextEdit::doUpdate()
       real pos0 = selStart > 0 ? glyphPos.at(selStart - 1).right : 0;
       real pos1 = selStart < int(glyphPos.size()) ? glyphPos.at(selStart).left : pos0;
       real pos = (pos0 + pos1)/2;
-      selStartHandle->node->setAttribute("left", std::to_string(pos-0.5).c_str());
+      real hpos = pos - (scrollX - scrollXOffset) - 0.5;
+      selStartHandle->node->setAttribute("left", std::to_string(hpos).c_str());
     }
     else
       selectionBGRect->setRect(Rect::wh(0, 20));
@@ -527,7 +529,8 @@ void TextEdit::doUpdate()
     real pos = (pos0 + pos1)/2;
     //Dim pos = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
     cursor->node->setTransform(Transform2D().translate(pos, 0));
-    cursorHandle->node->setAttribute("left", std::to_string(pos-0.5).c_str());
+    real hpos = pos - (scrollX - scrollXOffset) - 0.5;
+    cursorHandle->node->setAttribute("left", std::to_string(hpos).c_str());
     maxScrollX = glyphPos.empty() ? 0 : glyphPos.back().right;
     // show handle if selection present or cursor moved; hide when user starts typing
     bool cursorMoved = stbState.cursor != cursorPos && textChanged != SET_TEXT_CHANGE;
@@ -544,6 +547,8 @@ void TextEdit::doUpdate()
   // menu center aligned w/ center of visible part of selection (typical behavior on Android and iOS)
   if(selStart != selEnd && !contextMenu->isVisible() && !gui->pressedWidget)
     showMenu(gui);
+  else if(selStart == selEnd && contextMenu->isVisible()) // e.g. after cut to clipboard
+    gui->closeMenus();
 
   if(gui && gui->currInputWidget == this && (textChanged || selChanged) && textChanged < IME_TEXT_CHANGE)
     gui->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
@@ -609,15 +614,15 @@ SvgNode* textEditInnerNode()
           <rect width="1" height="20" fill="none"/>
           <rect class="text-cursor" display="none" x="-1" y="0" width="1.5" height="20"/>
         </g>
-
-        <g class="selend-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
-          <circle cx="0" cy="0" r="8"/>
-        </g>
-        <g class="selstart-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
-          <circle cx="0" cy="0" r="8"/>
-        </g>
-
       </g>
+
+      <g class="selend-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
+        <circle cx="0" cy="0" r="8"/>
+      </g>
+      <g class="selstart-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
+        <circle cx="0" cy="0" r="8"/>
+      </g>
+
     </svg>
   )#";
   static std::unique_ptr<SvgNode> proto;
