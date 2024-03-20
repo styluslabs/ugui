@@ -143,10 +143,13 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
 
   contents->onApplyLayout = [this, doc, contents](const Rect& src, const Rect& dest){
     real w = doc->bounds().width() - 6;  //dest.width() - 6;
+    //real pos = window()->gui()->pressedWidget == selStartHandle ?
+    //    selStartHandle->layoutTransform().xoffset() : cursor->node->getTransform().xoffset();
     real pos = cursor->node->getTransform().xoffset();
     real cw = cursor->node->bounds().width();
     // scrollX is actually (x offset + w) to behave nicely w/ changes in w, e.g., for auto adj layout
-    if(pos > scrollX)
+    if(selStart != selEnd) {}
+    else if(pos > scrollX)
       scrollX = pos + cw;
     else if(pos < scrollX - w)
       scrollX = pos + w;
@@ -168,9 +171,10 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
     }
     else if(event->type == SDL_FINGERMOTION && gui->pressedWidget == cursorHandle) {
       Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
-      stb_textedit_click(this, &stbState, p.x, p.y);
-      if(selStart != selEnd)
-        stbState.select_start = selStart;
+      if(selStartHandle->isVisible())
+        stb_textedit_drag(this, &stbState, p.x, p.y);  //stbState.select_start = selStart;
+      else
+        stb_textedit_click(this, &stbState, p.x, p.y);
       doUpdate();
     }
     else if(event->type == SDL_FINGERUP) {
@@ -188,8 +192,7 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
     else if(event->type == SDL_FINGERMOTION && gui->pressedWidget == selStartHandle) {
       Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
       stb_textedit_click(this, &stbState, p.x, p.y);
-      stbState.select_end = selEnd;
-      stbState.cursor = selEnd;
+      stbState.select_end = stbState.cursor = selEnd;
       doUpdate();
     }
     else if(event->type == SDL_FINGERUP) {
@@ -314,7 +317,18 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
     // double click to select word, triple click to select whole line (and 4th click clears selection)
+
+
     stb_textedit_click(this, &stbState, p.x, p.y);
+    if(selStart != selEnd && stbState.cursor >= selStart && stbState.cursor < selEnd) {
+      stbState.select_end = stbState.cursor = selEnd;
+      stbState.select_start = selStart;
+    }
+    //if(selStart == selEnd)
+    //  stb_textedit_click(this, &stbState, p.x, p.y);
+    //if(selStart != selEnd) {} else
+
+
     if(gui->fingerClicks <= 0) {}  // mouse events synthesized for touch may have clicks == 0
     else if(gui->fingerClicks % 3 == 2) {
       stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_WORDLEFT);
@@ -325,6 +339,7 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
       stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_LINEEND | STB_TEXTEDIT_K_SHIFT);
     }
     gui->setPressed(this);  // this will set class=focused
+    prevPos = Point(event->tfinger.x, event->tfinger.y);
   }
   else if(isLongPressOrRightClick(event)) {
     ctxPaste->setEnabled(!isReadOnly() && SDL_HasClipboardText());
@@ -333,11 +348,30 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   }
   else if(event->type == SDL_FINGERMOTION && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
-    stb_textedit_drag(this, &stbState, p.x, p.y);
+
+    if(selStart != selEnd) {
+      scrollX -= event->tfinger.x - prevPos.x;
+      //Widget* contents = selectFirst(".textbox-content");
+      //contents->setLayoutTransform(Transform2D::translating(scrollXOffset - scrollX, 0) * contents->layoutTransform());
+      node->invalidate(true);
+      //PLATFORM_LOG("scrollX: %f; dx: %f\n", scrollX,  event->tfinger.x - prevPos.x);
+    }
+    else
+      stb_textedit_click(this, &stbState, p.x, p.y);
+      //stb_textedit_drag(this, &stbState, p.x, p.y);
+
+
+    prevPos = Point(event->tfinger.x, event->tfinger.y);
   }
   else if(event->type == SDL_FINGERUP) {
-    if(selStart != selEnd)
-      showMenu(gui);
+    if(selStart != selEnd) {
+      if(gui->fingerClicks == 1) {
+        Point p = prevPos - textNode->bounds().origin();
+        stb_textedit_click(this, &stbState, p.x, p.y);
+      }
+      else
+        showMenu(gui);
+    }
   }
   else if(event->type == SDL_KEYDOWN) {
     SDL_Keycode key = event->key.keysym.sym;
@@ -440,7 +474,7 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   //  typing, and on click.  We keep cursor visible when selection exists, so user can see effect of, e.g.,
   //  Shift+LArrow/RArrow
   if(event->type == SDL_FINGERDOWN || (stbState.cursor != cursorPos && textChanged != SET_TEXT_CHANGE)) {
-    cursor->setVisible(true);
+    cursor->node->setAttr("opacity", 1.0);  //cursor->setVisible(true);
     gui->setTimer(700, this);
   }
 
@@ -505,21 +539,40 @@ void TextEdit::doUpdate()
 
   if(textChanged) {
     glyphPos = SvgDocument::sharedBoundsCalc->glyphPositions(textNode);
-    if(gui->pressedWidget != selStartHandle)  // don't hide if being dragged
-      selStartHandle->setVisible(selStart != selEnd);
+    //if(gui->pressedWidget != selStartHandle && gui->pressedWidget != cursorHandle)  // don't hide if being dragged
+    //  selStartHandle->setVisible(selStart != selEnd);
     if(selStart != selEnd) {
       real startpos = selmin > 0 ? glyphPos.at(selmin - 1).right : 0;
       real endpos = glyphPos.at(selmax - 1).right;
       selectionBGRect->setRect(Rect::ltrb(startpos, 0, endpos, 20));
+    }
+    else
+      selectionBGRect->setRect(Rect::wh(0, 20));
+    //if(selStartHandle->isVisible()) {
       // handle
       real pos0 = selStart > 0 ? glyphPos.at(selStart - 1).right : 0;
       real pos1 = selStart < int(glyphPos.size()) ? glyphPos.at(selStart).left : pos0;
       real pos = (pos0 + pos1)/2;
       real hpos = pos - (scrollX - scrollXOffset) - 0.5;
+
+      real w = node->bounds().width();
+      if(gui->pressedWidget != selStartHandle) {
+
+        bool draggingEnd = selStartHandle->isVisible() && gui->pressedWidget == cursorHandle;
+        selStartHandle->setVisible((selStart != selEnd || draggingEnd) && hpos >= 0 && hpos <= w);
+
+      }
+      else if(hpos < 0) {
+        scrollX += hpos;
+        hpos = 0;
+      }
+      else if(hpos > w) {
+        scrollX += hpos - w;
+        hpos = w;
+      }
+
       selStartHandle->node->setAttribute("left", std::to_string(hpos).c_str());
-    }
-    else
-      selectionBGRect->setRect(Rect::wh(0, 20));
+    //}
   }
   // would it be better to just use the actual glyph "positions" instead of glyph bboxes (would need to
   //  change Painter::glyphPositions)?
@@ -535,7 +588,7 @@ void TextEdit::doUpdate()
     // show handle if selection present or cursor moved; hide when user starts typing
     bool cursorMoved = stbState.cursor != cursorPos && textChanged != SET_TEXT_CHANGE;
     if(selStart != selEnd)
-      cursorHandle->setVisible(true);
+      cursorHandle->setVisible(hpos >= 0 && hpos <= node->bounds().width());
     else if(textChanged > LAYOUT_TEXT_CHANGE)
       cursorHandle->setVisible(false);
     else if(cursorMoved && stbState.cursor < int(glyphPos.size()))
