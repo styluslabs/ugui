@@ -41,6 +41,9 @@ private:
 
   Menu* contextMenu;
   Button* ctxPaste;
+  Button* ctxSelAll;
+  Button* ctxCut;
+  Button* ctxCopy;
   Widget* cursor;
   AbsPosWidget* cursorHandle;
   AbsPosWidget* selStartHandle;

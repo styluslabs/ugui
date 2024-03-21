@@ -63,46 +63,25 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
   stb_textedit_initialize_state(&stbState, true);  // single line = true
   addHandler([this](SvgGui* gui, SDL_Event* event){ return sdlEventFn(gui, event); });
 
-
-  //static const char* menuItemSvg = R"#(
-  //  <g class="toolbutton" layout="box">
-  //    <rect class="background" box-anchor="hfill" width="36" height="32"/>
-  //    <text class="title" margin="0 9"></text>
-  //  </g>
-  //)#";
-  //
-  //Button* cloned = new Button(loadSVGFragment(menuItemSvg));
-  //Widget* titleExt = cloned->selectFirst(".title");
-  //titleExt->setText(title);
-
+  // context menu
   Toolbar* popup = createToolbar();
-  Button* ctxCut = createToolbutton(NULL, "Cut", true);
+  ctxSelAll = createToolbutton(NULL, "Select All", true);
+  ctxSelAll->onClicked = [this](){ selectAll(); showMenu(window()->gui()); };
+  ctxCut = createToolbutton(NULL, "Cut", true);
   ctxCut->onClicked = [this](){ doCut(true); doUpdate(); };
-  Button* ctxCopy = createToolbutton(NULL, "Copy", true);
+  ctxCopy = createToolbutton(NULL, "Copy", true);
   ctxCopy->onClicked = [this](){ doCopy(true); };
   ctxPaste = createToolbutton(NULL, "Paste", true);
   ctxPaste->onClicked = [this](){ doPaste(); doUpdate(); };
+  popup->addWidget(ctxSelAll);
   popup->addWidget(ctxCut);
   popup->addWidget(ctxCopy);
   popup->addWidget(ctxPaste);
+  popup->node->addClass("graybar");
 
   contextMenu = new Menu(loadSVGFragment(
        "<g class='menu child-container' position='absolute' box-anchor='fill' layout='box'></g>"), Menu::FLOATING);  //Menu::RIGHT | Menu::LEFT);
   contextMenu->addWidget(popup);
-
-
-  // context menu
-  /*contextMenu = createMenu(Menu::FLOATING, false);
-  Button* ctxCut = createMenuItem("Cut");
-  ctxCut->onClicked = [this](){ doCut(true); doUpdate(); };
-  Button* ctxCopy = createMenuItem("Copy");
-  ctxCopy->onClicked = [this](){ doCopy(true); };
-  ctxPaste = createMenuItem("Paste");
-  ctxPaste->onClicked = [this](){ doPaste(); doUpdate(); };
-
-  contextMenu->addItem(ctxCut);
-  contextMenu->addItem(ctxCopy);
-  contextMenu->addItem(ctxPaste);*/
 
   // code for scrolling text wider than box - taken from ScrollWidget
   Widget* contents = selectFirst(".textbox-content");
@@ -143,8 +122,6 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
 
   contents->onApplyLayout = [this, doc, contents](const Rect& src, const Rect& dest){
     real w = doc->bounds().width() - 6;  //dest.width() - 6;
-    //real pos = window()->gui()->pressedWidget == selStartHandle ?
-    //    selStartHandle->layoutTransform().xoffset() : cursor->node->getTransform().xoffset();
     real pos = cursor->node->getTransform().xoffset();
     real cw = cursor->node->bounds().width();
     // scrollX is actually (x offset + w) to behave nicely w/ changes in w, e.g., for auto adj layout
@@ -164,20 +141,21 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
     return true;
   };
 
-  cursorHandle->addHandler([this](SvgGui* gui, SDL_Event* event){
+  cursorHandle->addHandler([this, hasSel = false](SvgGui* gui, SDL_Event* event) mutable {
     if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
       gui->setPressed(cursorHandle);
       cursor->node->setAttr("opacity", 1.0);
+      hasSel = selStart != selEnd;
     }
     else if(event->type == SDL_FINGERMOTION && gui->pressedWidget == cursorHandle) {
       Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
-      if(selStartHandle->isVisible())
+      if(hasSel)  //selStart != selEnd || selStartHandle->isVisible())
         stb_textedit_drag(this, &stbState, p.x, p.y);  //stbState.select_start = selStart;
       else
         stb_textedit_click(this, &stbState, p.x, p.y);
       doUpdate();
     }
-    else if(event->type == SDL_FINGERUP) {
+    else if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED) {
       if(selStart != selEnd)
         showMenu(gui);
     }
@@ -195,7 +173,7 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
       stbState.select_end = stbState.cursor = selEnd;
       doUpdate();
     }
-    else if(event->type == SDL_FINGERUP) {
+    else if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED) {
       if(selStart != selEnd)
         showMenu(gui);
     }
@@ -298,8 +276,12 @@ void TextEdit::doCut(bool cutall)
 
 void TextEdit::showMenu(SvgGui* gui)
 {
-  Rect b = selectionBGRect->bounds().rectIntersect(node->bounds());
+  Rect b = selStart != selEnd ? selectionBGRect->bounds().rectIntersect(node->bounds()) : cursor->node->bounds();
   real w = std::max(100.0, contextMenu->node->bounds().width());
+  ctxSelAll->setVisible(selStart == selEnd);
+  ctxCut->setVisible(!isReadOnly() && selStart != selEnd);
+  ctxCopy->setVisible(selStart != selEnd);
+  ctxPaste->setVisible(!isReadOnly() && SDL_HasClipboardText());
   gui->showContextMenu(contextMenu, Point(b.center().x - w/2, b.bottom + 30), NULL, false);
 }
 
@@ -316,19 +298,14 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   showLastChar = false;
   if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
-    // double click to select word, triple click to select whole line (and 4th click clears selection)
-
-
+    // finger down on selection allows dragging to scroll (otherwise selection cleared and dragging moves cursor)
     stb_textedit_click(this, &stbState, p.x, p.y);
-    if(selStart != selEnd && stbState.cursor >= selStart && stbState.cursor < selEnd) {
+    if(selStart != selEnd && (stbState.cursor >= selStart && stbState.cursor < selEnd)
+        || (stbState.cursor <= selStart && stbState.cursor > selEnd)) {
       stbState.select_end = stbState.cursor = selEnd;
       stbState.select_start = selStart;
     }
-    //if(selStart == selEnd)
-    //  stb_textedit_click(this, &stbState, p.x, p.y);
-    //if(selStart != selEnd) {} else
-
-
+    // double click to select word, triple click to select whole line (and 4th click clears selection)
     if(gui->fingerClicks <= 0) {}  // mouse events synthesized for touch may have clicks == 0
     else if(gui->fingerClicks % 3 == 2) {
       stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_WORDLEFT);
@@ -342,25 +319,16 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     prevPos = Point(event->tfinger.x, event->tfinger.y);
   }
   else if(isLongPressOrRightClick(event)) {
-    ctxPaste->setEnabled(!isReadOnly() && SDL_HasClipboardText());
-    gui->showContextMenu(contextMenu, Point(event->tfinger.x, event->tfinger.y));
-
+    showMenu(gui);  //gui->showContextMenu(contextMenu, Point(event->tfinger.x, event->tfinger.y));
   }
   else if(event->type == SDL_FINGERMOTION && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
-
     if(selStart != selEnd) {
       scrollX -= event->tfinger.x - prevPos.x;
-      //Widget* contents = selectFirst(".textbox-content");
-      //contents->setLayoutTransform(Transform2D::translating(scrollXOffset - scrollX, 0) * contents->layoutTransform());
       node->invalidate(true);
-      //PLATFORM_LOG("scrollX: %f; dx: %f\n", scrollX,  event->tfinger.x - prevPos.x);
     }
     else
-      stb_textedit_click(this, &stbState, p.x, p.y);
-      //stb_textedit_drag(this, &stbState, p.x, p.y);
-
-
+      stb_textedit_click(this, &stbState, p.x, p.y);  //stb_textedit_drag
     prevPos = Point(event->tfinger.x, event->tfinger.y);
   }
   else if(event->type == SDL_FINGERUP) {
@@ -537,10 +505,9 @@ void TextEdit::doUpdate()
   selStart = stbState.select_start;
   selEnd = stbState.select_end;
 
+  real width = scrollXOffset;  //node->bounds().width();
   if(textChanged) {
     glyphPos = SvgDocument::sharedBoundsCalc->glyphPositions(textNode);
-    //if(gui->pressedWidget != selStartHandle && gui->pressedWidget != cursorHandle)  // don't hide if being dragged
-    //  selStartHandle->setVisible(selStart != selEnd);
     if(selStart != selEnd) {
       real startpos = selmin > 0 ? glyphPos.at(selmin - 1).right : 0;
       real endpos = glyphPos.at(selmax - 1).right;
@@ -548,63 +515,71 @@ void TextEdit::doUpdate()
     }
     else
       selectionBGRect->setRect(Rect::wh(0, 20));
-    //if(selStartHandle->isVisible()) {
-      // handle
-      real pos0 = selStart > 0 ? glyphPos.at(selStart - 1).right : 0;
-      real pos1 = selStart < int(glyphPos.size()) ? glyphPos.at(selStart).left : pos0;
-      real pos = (pos0 + pos1)/2;
-      real hpos = pos - (scrollX - scrollXOffset) - 0.5;
+  }
+  // would it be better to just use the actual glyph "positions" instead of glyph bboxes (would need to
+  //  change Painter::glyphPositions)?
+  if(glyphPos.size() != currText.size())
+    ASSERT(0 && "Number of glyphs does not equal number of characters - bad unicode?");
+  else {
+    maxScrollX = glyphPos.empty() ? 0 : glyphPos.back().right;
 
-      real w = node->bounds().width();
-      if(gui->pressedWidget != selStartHandle) {
+    // start handle
+    real spos0 = selStart > 0 ? glyphPos.at(selStart - 1).right : 0;
+    real spos1 = selStart < int(glyphPos.size()) ? glyphPos.at(selStart).left : spos0;
+    real spos = (spos0 + spos1)/2;
+    real shpos = spos - (scrollX - scrollXOffset) - 0.5;
+    if(gui && gui->pressedWidget != selStartHandle) {
+      bool draggingEnd = selStartHandle->isVisible() && gui->pressedWidget == cursorHandle;
+      selStartHandle->setVisible((selStart != selEnd || draggingEnd) && shpos >= 0 && shpos <= width);
+    }
+    else if(shpos < 0) {
+      scrollX += shpos;
+      shpos = 0;
+    }
+    else if(shpos > width) {
+      scrollX += shpos - width;
+      shpos = width;
+    }
+    selStartHandle->node->setAttribute("left", std::to_string(shpos).c_str());
 
-        bool draggingEnd = selStartHandle->isVisible() && gui->pressedWidget == cursorHandle;
-        selStartHandle->setVisible((selStart != selEnd || draggingEnd) && hpos >= 0 && hpos <= w);
-
-      }
+    // cursor/end handle
+    real pos0 = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
+    real pos1 = stbState.cursor < int(glyphPos.size()) ? glyphPos.at(stbState.cursor).left : pos0;
+    real pos = (pos0 + pos1)/2;
+    cursor->node->setTransform(Transform2D().translate(pos, 0));
+    real hpos = pos - (scrollX - scrollXOffset) - 0.5;
+    // show handle if selection present or cursor moved; hide when user starts typing
+    bool cursorMoved = stbState.cursor != cursorPos && textChanged != SET_TEXT_CHANGE;
+    if(selStart != selEnd) {
+      // cursor "autoscroll" in onApplyLayout is disabled when selection present, so do it here
+      if(gui && gui->pressedWidget != cursorHandle) {}
       else if(hpos < 0) {
         scrollX += hpos;
         hpos = 0;
       }
-      else if(hpos > w) {
-        scrollX += hpos - w;
-        hpos = w;
+      else if(hpos > width) {
+        scrollX += hpos - width;
+        hpos = width;
       }
-
-      selStartHandle->node->setAttribute("left", std::to_string(hpos).c_str());
-    //}
-  }
-  // would it be better to just use the actual glyph "positions" instead of glyph bboxes (would need to
-  //  change Painter::glyphPositions)?
-  if(glyphPos.size() == currText.size()) {
-    real pos0 = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
-    real pos1 = stbState.cursor < int(glyphPos.size()) ? glyphPos.at(stbState.cursor).left : pos0;
-    real pos = (pos0 + pos1)/2;
-    //Dim pos = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
-    cursor->node->setTransform(Transform2D().translate(pos, 0));
-    real hpos = pos - (scrollX - scrollXOffset) - 0.5;
-    cursorHandle->node->setAttribute("left", std::to_string(hpos).c_str());
-    maxScrollX = glyphPos.empty() ? 0 : glyphPos.back().right;
-    // show handle if selection present or cursor moved; hide when user starts typing
-    bool cursorMoved = stbState.cursor != cursorPos && textChanged != SET_TEXT_CHANGE;
-    if(selStart != selEnd)
-      cursorHandle->setVisible(hpos >= 0 && hpos <= node->bounds().width());
+      cursorHandle->setVisible(hpos >= 0 && hpos <= width);
+    }
     else if(textChanged > LAYOUT_TEXT_CHANGE)
       cursorHandle->setVisible(false);
     else if(cursorMoved && stbState.cursor < int(glyphPos.size()))
       cursorHandle->setVisible(true);
+    cursorHandle->node->setAttribute("left", std::to_string(hpos).c_str());
   }
-  else
-    ASSERT(0 && "Number of glyphs does not equal number of characters - bad unicode?");
 
   // menu center aligned w/ center of visible part of selection (typical behavior on Android and iOS)
-  if(selStart != selEnd && !contextMenu->isVisible() && !gui->pressedWidget)
-    showMenu(gui);
-  else if(selStart == selEnd && contextMenu->isVisible()) // e.g. after cut to clipboard
-    gui->closeMenus();
+  if(gui) {
+    if(selStart != selEnd && !contextMenu->isVisible() && !gui->pressedWidget)
+      showMenu(gui);
+    else if(selChanged && selStart == selEnd && contextMenu->isVisible()) // e.g. after cut to clipboard
+      gui->closeMenus();
 
-  if(gui && gui->currInputWidget == this && (textChanged || selChanged) && textChanged < IME_TEXT_CHANGE)
-    gui->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
+    if(gui->currInputWidget == this && (textChanged || selChanged) && textChanged < IME_TEXT_CHANGE)
+      gui->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
+  }
 
   if(textChanged >= USER_TEXT_CHANGE && onChanged)
     onChanged(text().c_str());

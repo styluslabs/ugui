@@ -1087,6 +1087,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
 
     if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
       if(!gui->pressedWidget) return false;
+      bool takefocus = gui->pressedWidget->isDescendantOf(this);
       if(event->type == SDL_FINGERUP && gui->fingerClicks > 0) {  //gui->totalFingerDist < 20 &&
         // cancel any panning
         scroll(initialPos - prevPos);
@@ -1101,9 +1102,11 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         gui->sendEvent(window(), this, event);
       }
       // take focus if tappedWidget didn't
-      Widget* focused = window()->focusedWidget;
-      if(!focused || !focused->isDescendantOf(this))
-        gui->setFocused(this);
+      if(takefocus) {
+        Widget* focused = window()->focusedWidget;
+        if(!focused || !focused->isDescendantOf(this))
+          gui->setFocused(this);
+      }
       return true;
     }
 
