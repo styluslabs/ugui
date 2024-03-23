@@ -1302,7 +1302,8 @@ void SvgGui::updateGestures(SDL_Event* event)
     prevPoints.clear();
     prevPoints.push_back({event->tfinger.fingerId, float(p.x), float(p.y), 0});
     // click ... if time between up and next down is too short, don't count as separate click
-    fingerClicks = t - fingerUpDnTime < MAX_CLICK_MSEC ? (t - fingerUpDnTime < 40 ? fingerClicks : fingerClicks + 1) : 1;
+    fingerClicks = t - fingerUpDnTime < MAX_CLICK_MSEC && p.dist(prevFingerPos) < MAX_CLICK_DIST ?
+        (t - fingerUpDnTime < 40 ? fingerClicks : fingerClicks + 1) : 1;
     totalFingerDist = 0;
     fingerUpDnTime = t;
   }

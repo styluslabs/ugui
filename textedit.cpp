@@ -300,7 +300,7 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
     // finger down on selection allows dragging to scroll (otherwise selection cleared and dragging moves cursor)
     stb_textedit_click(this, &stbState, p.x, p.y);
-    if(selStart != selEnd && (stbState.cursor >= selStart && stbState.cursor < selEnd)
+    if((stbState.cursor >= selStart && stbState.cursor < selEnd)  //selStart != selEnd is implied
         || (stbState.cursor <= selStart && stbState.cursor > selEnd)) {
       stbState.select_end = stbState.cursor = selEnd;
       stbState.select_start = selStart;
