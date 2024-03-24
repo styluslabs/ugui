@@ -527,7 +527,7 @@ void TextEdit::doUpdate()
     real spos0 = selStart > 0 ? glyphPos.at(selStart - 1).right : 0;
     real spos1 = selStart < int(glyphPos.size()) ? glyphPos.at(selStart).left : spos0;
     real spos = (spos0 + spos1)/2;
-    real shpos = spos - (scrollX - scrollXOffset) - 0.5;
+    real shpos = spos - (scrollX - scrollXOffset);
     if(gui && gui->pressedWidget != selStartHandle) {
       bool draggingEnd = selStartHandle->isVisible() && gui->pressedWidget == cursorHandle;
       selStartHandle->setVisible((selStart != selEnd || draggingEnd) && shpos >= 0 && shpos <= width);
@@ -540,14 +540,14 @@ void TextEdit::doUpdate()
       scrollX += shpos - width;
       shpos = width;
     }
-    selStartHandle->node->setAttribute("left", std::to_string(shpos).c_str());
+    selStartHandle->node->setAttribute("left", std::to_string(shpos - 2).c_str());
 
     // cursor/end handle
     real pos0 = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
     real pos1 = stbState.cursor < int(glyphPos.size()) ? glyphPos.at(stbState.cursor).left : pos0;
     real pos = (pos0 + pos1)/2;
     cursor->node->setTransform(Transform2D().translate(pos, 0));
-    real hpos = pos - (scrollX - scrollXOffset) - 0.5;
+    real hpos = pos - (scrollX - scrollXOffset);
     // show handle if selection present or cursor moved; hide when user starts typing
     bool cursorMoved = stbState.cursor != cursorPos && textChanged != SET_TEXT_CHANGE;
     if(selStart != selEnd) {
@@ -567,14 +567,14 @@ void TextEdit::doUpdate()
       cursorHandle->setVisible(false);
     else if(cursorMoved && stbState.cursor < int(glyphPos.size()))
       cursorHandle->setVisible(true);
-    cursorHandle->node->setAttribute("left", std::to_string(hpos).c_str());
+    cursorHandle->node->setAttribute("left", std::to_string(hpos - 2).c_str());
   }
 
   // menu center aligned w/ center of visible part of selection (typical behavior on Android and iOS)
   if(gui) {
-    if(selStart != selEnd && !contextMenu->isVisible() && !gui->pressedWidget)
+    /*if(selStart != selEnd && !contextMenu->isVisible() && !gui->pressedWidget)
       showMenu(gui);
-    else if(selChanged && selStart == selEnd && contextMenu->isVisible()) // e.g. after cut to clipboard
+    else*/ if(selChanged && selStart == selEnd && contextMenu->isVisible()) // e.g. after cut to clipboard
       gui->closeMenus();
 
     if(gui->currInputWidget == this && (textChanged || selChanged) && textChanged < IME_TEXT_CHANGE)
