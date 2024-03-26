@@ -300,7 +300,8 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
     // finger down on selection allows dragging to scroll (otherwise selection cleared and dragging moves cursor)
     stb_textedit_click(this, &stbState, p.x, p.y);
-    if((stbState.cursor >= selStart && stbState.cursor < selEnd)  //selStart != selEnd is implied
+    if(event->tfinger.touchId == SDL_TOUCH_MOUSEID) {}
+    else if((stbState.cursor >= selStart && stbState.cursor < selEnd)  //selStart != selEnd is implied
         || (stbState.cursor <= selStart && stbState.cursor > selEnd)) {
       stbState.select_end = stbState.cursor = selEnd;
       stbState.select_start = selStart;
@@ -323,12 +324,14 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   }
   else if(event->type == SDL_FINGERMOTION && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
-    if(selStart != selEnd) {
+    if(event->tfinger.touchId == SDL_TOUCH_MOUSEID)
+      stb_textedit_drag(this, &stbState, p.x, p.y);
+    else if(selStart != selEnd) {
       scrollX -= event->tfinger.x - prevPos.x;
       node->invalidate(true);
     }
     else
-      stb_textedit_click(this, &stbState, p.x, p.y);  //stb_textedit_drag
+      stb_textedit_click(this, &stbState, p.x, p.y);
     prevPos = Point(event->tfinger.x, event->tfinger.y);
   }
   else if(event->type == SDL_FINGERUP) {

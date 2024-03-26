@@ -235,27 +235,37 @@ public:
   ScrollWidget(SvgDocument* container_doc, Widget* contents);
   void scroll(Point dr);
   void scrollTo(Point r);
+  void setOverscroll(real d);
 
   Widget* contents;
   Widget* yHandle;
   real scrollX = 0;
   real scrollY = 0;
   Rect scrollLimits;
+  Rect staticLimits;
 
   std::function<void()> onScroll;
 
 private:
   void setScrollPos(Point r);
   bool forwardEvent(SvgGui* gui, SDL_Event* event, Point pos);
+  void cleanup(SvgGui* gui, SDL_Event* event);
 
   real flingDrag = 0;
   real flingDecel = 100*1E-6;  // pix per ms per ms
   real minFlingV = 200*1E-3;  // pix per ms
   real flingTimerMs = 32;  // ~30fps
+  real overScroll = 0;
   Point flingV;
 
   Point initialPos;
   Point prevPos;
+
+  bool enterEventSent = false;
+  bool testPassThru = false;
+
+  Widget* tappedWidget = NULL;
+  SDL_Event pressEvent = {0};
 };
 
 class Dialog : public Window

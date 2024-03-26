@@ -1010,11 +1010,25 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       scroll(Point(0, event->wheel.y/12.0));  // wheel.x,y are now multiplied by 120
       if(flingV != Point(0, 0)) {
         flingV = Point(0, 0);
-        gui->removeTimer(this);  //this);
+        gui->removeTimer(this);
       }
       return true;
     }
-    if(event->type == SDL_FINGERDOWN || isLongPressOrRightClick(event)) {
+    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {  //|| isLongPressOrRightClick(event)) {
+      testPassThru = true;
+      enterEventSent = false;
+      gui->setTimer(150, this, [this, gui](){
+        if(gui->pressedWidget == this && gui->fingerClicks > 0) {
+          SDL_Event enterleave = {0};
+          enterleave.type = SvgGui::ENTER;
+          enterleave.user.timestamp = pressEvent.common.timestamp;
+          enterleave.user.data1 = &pressEvent;
+          gui->sendEvent(window(), tappedWidget, &enterleave);
+          enterEventSent = true;
+        }
+        return 0;
+      });
+      setOverscroll(40);
       gui->pressedWidget = this;
       return true;
     }
@@ -1027,8 +1041,10 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         flingV = std::abs(flingV.x) > std::abs(flingV.y) ? Point(flingV.x, 0) : Point(0, flingV.y);
         if(flingV.dist() > minFlingV)
           gui->setTimer(flingTimerMs, this);
-        else
+        else {
           flingV = Point(0, 0);
+          //setOverscroll(0);
+        }
       }
       return true;
     }
@@ -1044,6 +1060,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         if(flingV.dist() > minFlingV)
           return true;
         flingV = Point(0, 0);
+        //setOverscroll(0);
       }
       return false;
     }
@@ -1054,7 +1071,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   //  modal, etc.) in SvgGui::sendEvent() is not bypassed
   eventFilter = [this](SvgGui* gui, Widget* widget, SDL_Event* event) {
     // TODO: delay forwarding press event so that widget doesn't become pressed if we're just scrolling
-    if(event->type == SDL_FINGERDOWN || isLongPressOrRightClick(event)) {
+
+    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
       prevPos = Point(event->tfinger.x, event->tfinger.y);
       //prevEventTime = event->tfinger.timestamp;
       initialPos = prevPos;
@@ -1063,49 +1081,17 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         flingV = Point(0, 0);
         gui->removeTimer(this);
       }
-      return false;  // forward event
-    }
-
-    if(event->type == SDL_FINGERMOTION && gui->pressedWidget && gui->pressedWidget->isDescendantOf(this)) {
-      Point pos = Point(event->tfinger.x, event->tfinger.y);
-      Point dr = pos - initialPos;
-      if(gui->pressedWidget != this) {
-        if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
-            || (scrollLimits.height() == 0 && dr.y >= 2*dr.x)) {
-          if(gui->sendEvent(window(), widget, event))
-            return true;
-        }
-        if(gui->fingerClicks < 1) {
-          gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
-          gui->pressedWidget = this;
-        }
-      }
-      scroll(pos - prevPos);
-      prevPos = pos;
+      //return false;  // forward event
+      tappedWidget = widget;
+      pressEvent = *event;
+      gui->sendEvent(window(), this, event);
       return true;
     }
 
-    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
-      if(!gui->pressedWidget) return false;
-      bool takefocus = gui->pressedWidget->isDescendantOf(this);
-      if(event->type == SDL_FINGERUP && gui->fingerClicks > 0) {  //gui->totalFingerDist < 20 &&
-        // cancel any panning
-        scroll(initialPos - prevPos);
-        flingV = Point(0, 0);
-        gui->sendEvent(window(), widget, event);
-      }
-      else {
-        if(gui->pressedWidget != this) {
-          gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
-          gui->pressedWidget = this;
-        }
-        gui->sendEvent(window(), this, event);
-      }
-      // take focus if tappedWidget didn't
-      if(takefocus) {
-        Widget* focused = window()->focusedWidget;
-        if(!focused || !focused->isDescendantOf(this))
-          gui->setFocused(this);
+    if(isLongPressOrRightClick(event)) {
+      if(gui->sendEvent(window(), widget, event) && gui->pressedWidget != this) {
+        cleanup(gui, event);
+        setOverscroll(0);
       }
       return true;
     }
@@ -1115,20 +1101,71 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     if(wheelnomod)  //gui->pressedWidget == this ||
       return gui->sendEvent(window(), this, event);  // send event to ScrollWidget normally
 
+    if(gui->pressedWidget != this) return false;
+
+    if(event->type == SDL_FINGERMOTION) {  // && gui->pressedWidget && gui->pressedWidget->isDescendantOf(this)) {
+      Point pos = Point(event->tfinger.x, event->tfinger.y);
+      if(testPassThru) {  //gui->pressedWidget != this) {
+        testPassThru = false;
+        Point dr = pos - initialPos;
+        if(gui->sendEvent(window(), tappedWidget, &pressEvent) && gui->pressedWidget != this) {
+          if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
+              || (scrollLimits.height() == 0 && dr.y >= 2*dr.x)) {
+            if(gui->sendEvent(window(), widget, event)) {
+              cleanup(gui, event);
+              setOverscroll(0);
+              return true;
+            }
+          }
+          // drag event not accepted
+          gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
+          gui->pressedWidget = this;
+        }
+      }
+      if(gui->fingerClicks < 1)
+        cleanup(gui, event);
+      scroll(pos - prevPos);
+      prevPos = pos;
+      return true;
+    }
+
+    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+      cleanup(gui, event);
+      setOverscroll(0);
+      if(event->type == SDL_FINGERUP && gui->fingerClicks > 0) {  //gui->totalFingerDist < 20 &&
+        // cancel any panning
+        scroll(initialPos - prevPos);
+        flingV = Point(0, 0);
+        gui->sendEvent(window(), widget, &pressEvent);
+        gui->sendEvent(window(), widget, event);
+      }
+      else {
+        gui->sendEvent(window(), this, event);
+      }
+      // take focus if tappedWidget didn't
+      Widget* focused = window()->focusedWidget;
+      if(!focused || !focused->isDescendantOf(this))
+        gui->setFocused(this);
+      return true;
+    }
+
     return false;  //forwardEvent(gui, event, gui->prevFingerPos);
   };
 
   contents->onApplyLayout = [this](const Rect& src, const Rect& dest) {
     Rect bbox = node->bounds();  // <svg> bounds
-    scrollLimits = Rect::ltrb(0, 0,
+    staticLimits = Rect::ltrb(0, 0,
       std::max<real>(0, dest.width() - bbox.width()), std::max<real>(0, dest.height() - bbox.height()));
+    scrollLimits = staticLimits;
+    scrollLimits.pad(scrollLimits.width() > 0 ? overScroll : 0, scrollLimits.height() > 0 ? overScroll : 0);
     scrollX = std::max(scrollLimits.left, std::min(scrollLimits.right, scrollX));
     scrollY = std::max(scrollLimits.top, std::min(scrollLimits.bottom, scrollY));
     yHandle->setVisible(scrollLimits.top < scrollLimits.bottom);
     if(yHandle->isVisible()) {
       real h = std::max(real(16), bbox.height() * bbox.height()/dest.height());
       real w = yHandle->node->bounds().width();
-      real yc = bbox.top + (bbox.height() - h)*scrollY/scrollLimits.bottom + h/2;
+      real f = std::max(0.0, std::min(scrollY/staticLimits.bottom, 1.0));
+      real yc = bbox.top + (bbox.height() - h)*f + h/2;
       yHandle->setLayoutBounds(Rect::centerwh(Point(bbox.right - w/2 - 1, yc), w, h));
     }
     return false;  // allow applyLayout to proceed
@@ -1201,9 +1238,60 @@ bool ScrollWidget::forwardEvent(SvgGui* gui, SDL_Event* event, Point pos)
   return gui->sendEvent(window(), target, event);
 }
 
+void ScrollWidget::cleanup(SvgGui* gui, SDL_Event* event)
+{
+  testPassThru = false;
+  gui->removeTimers(this);
+  if(enterEventSent) {
+    SDL_Event enterleave = {0};
+    enterleave.type = SvgGui::LEAVE;
+    enterleave.user.timestamp = event->common.timestamp;
+    enterleave.user.data1 = event;
+    gui->sendEvent(window(), tappedWidget, &enterleave);
+    enterEventSent = false;
+  }
+  tappedWidget = NULL;
+}
+
+void ScrollWidget::setOverscroll(real d)
+{
+  overScroll = d;
+  scrollLimits = staticLimits;
+  scrollLimits.pad(scrollLimits.width() > 0 ? overScroll : 0, scrollLimits.height() > 0 ? overScroll : 0);
+  setScrollPos(Point(scrollX, scrollY));
+}
+
 void ScrollWidget::scroll(Point dr)
 {
-  setScrollPos(Point(scrollX, scrollY) - dr);
+  Point pos = Point(scrollX, scrollY) - dr;
+
+  // iOS seems to just switch to 1/2 speed scrolling beyond static limit
+  if(scrollLimits.width() > 0) {
+    real lx = (scrollLimits.left + overScroll) - pos.x;
+    real rx = pos.x - (scrollLimits.right - overScroll);
+    if(lx > 0) pos.x += std::min(dr.x, lx)/2;
+    else if(rx > 0) pos.x += std::max(dr.x, -rx)/2;
+
+    //if(lx > 0)
+    //  pos.x = scrollLimits.left + overScroll/(lx/overScroll + 1);
+    //else if(rx > 0)
+    //  //pos.x = scrollLimits.right - overScroll + overScroll*(1 - 1/(rx + 1));  rx - rx/(rx+1) rx - 1/(1 + 1/rx))
+    //  // s*(1 - 1/(rx/s + 1))   s - s/(rx/s + 1)
+    //  pos.x = scrollLimits.right - overScroll/(rx/overScroll + 1);
+  }
+
+  if(scrollLimits.height() > 0) {
+    real ty = (scrollLimits.top + overScroll) - pos.y;
+    real by = pos.y - (scrollLimits.bottom - overScroll);
+    if(ty > 0) pos.y += std::min(dr.y, ty)/2;
+    else if(by > 0) pos.y += std::max(dr.y, -by)/2;
+    //if(ty > 0)
+    //  pos.y = scrollLimits.top + overScroll/(ty/overScroll + 1);
+    //else if(by > 0)
+    //  pos.y = scrollLimits.bottom - overScroll/(by/overScroll + 1);
+  }
+
+  setScrollPos(pos);
 }
 
 void ScrollWidget::scrollTo(Point r)
