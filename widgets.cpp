@@ -598,6 +598,8 @@ CheckBox* createCheckBox(const char* title, bool checked)
     titlenode->setAttribute("margin", "4 2");
     row->addChild(cbnode);
     row->addChild(titlenode);
+    row->addClass("checkbox");
+    cbnode->removeClass("checkbox");
     cbnode = row;
   }
   CheckBox* widget = new CheckBox(cbnode, checked);
@@ -1014,11 +1016,19 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       }
       return true;
     }
-    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {  //|| isLongPressOrRightClick(event)) {
+    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
+      prevPos = Point(event->tfinger.x, event->tfinger.y);
+      //prevEventTime = event->tfinger.timestamp;
+      initialPos = prevPos;
+      // what if we don't clear flingV here, so user can keep accelerate scrolling?
+      if(flingV != Point(0, 0)) {
+        flingV = Point(0, 0);
+        gui->removeTimer(this);
+      }
       testPassThru = true;
       enterEventSent = false;
       gui->setTimer(150, this, [this, gui](){
-        if(gui->pressedWidget == this && gui->fingerClicks > 0) {
+        if(gui->pressedWidget == this && tappedWidget) {  //gui->fingerClicks > 0) {
           SDL_Event enterleave = {0};
           enterleave.type = SvgGui::ENTER;
           enterleave.user.timestamp = pressEvent.common.timestamp;
@@ -1032,7 +1042,17 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       gui->pressedWidget = this;
       return true;
     }
+    if(event->type == SDL_FINGERMOTION && gui->pressedWidget == this) {
+      Point pos = Point(event->tfinger.x, event->tfinger.y);
+      if(tappedWidget && gui->fingerClicks < 1)
+        cleanup(gui, event);
+      scroll(pos - prevPos);
+      prevPos = pos;
+      return true;
+    }
     if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+      cleanup(gui, event);
+      setOverscroll(0);
       if(gui->pressedWidget == this) {
         flingV = window()->gui()->flingV/1000;  // convert from secs to ms
         flingV.x = (scrollX > scrollLimits.left && scrollX < scrollLimits.right) ? flingV.x : 0;
@@ -1045,6 +1065,9 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
           flingV = Point(0, 0);
           //setOverscroll(0);
         }
+        Widget* focused = window()->focusedWidget;
+        if(!focused || !focused->isDescendantOf(this))
+          gui->setFocused(this);
       }
       return true;
     }
@@ -1070,24 +1093,11 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   // event filter should always forward to normal widget so that state handling (hovered, pressed,
   //  modal, etc.) in SvgGui::sendEvent() is not bypassed
   eventFilter = [this](SvgGui* gui, Widget* widget, SDL_Event* event) {
-    // TODO: delay forwarding press event so that widget doesn't become pressed if we're just scrolling
-
-    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
-      prevPos = Point(event->tfinger.x, event->tfinger.y);
-      //prevEventTime = event->tfinger.timestamp;
-      initialPos = prevPos;
-      // what if we don't clear flingV here, so user can keep accelerate scrolling?
-      if(flingV != Point(0, 0)) {
-        flingV = Point(0, 0);
-        gui->removeTimer(this);
-      }
-      //return false;  // forward event
+    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
       tappedWidget = widget;
       pressEvent = *event;
-      gui->sendEvent(window(), this, event);
-      return true;
+      return gui->sendEvent(window(), this, event);
     }
-
     if(isLongPressOrRightClick(event)) {
       if(gui->sendEvent(window(), widget, event) && gui->pressedWidget != this) {
         cleanup(gui, event);
@@ -1095,19 +1105,17 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       }
       return true;
     }
-
     // allow use of modifier key to pass wheel event to underlying widget
     bool wheelnomod = !PLATFORM_MOBILE && event->type == SDL_MOUSEWHEEL && !(event->wheel.direction >> 16);
-    if(wheelnomod)  //gui->pressedWidget == this ||
+    if(wheelnomod)
       return gui->sendEvent(window(), this, event);  // send event to ScrollWidget normally
 
     if(gui->pressedWidget != this) return false;
 
-    if(event->type == SDL_FINGERMOTION) {  // && gui->pressedWidget && gui->pressedWidget->isDescendantOf(this)) {
-      Point pos = Point(event->tfinger.x, event->tfinger.y);
-      if(testPassThru) {  //gui->pressedWidget != this) {
+    if(event->type == SDL_FINGERMOTION) {
+      if(testPassThru) {
         testPassThru = false;
-        Point dr = pos - initialPos;
+        Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
         if(gui->sendEvent(window(), tappedWidget, &pressEvent) && gui->pressedWidget != this) {
           if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
               || (scrollLimits.height() == 0 && dr.y >= 2*dr.x)) {
@@ -1122,34 +1130,23 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
           gui->pressedWidget = this;
         }
       }
-      if(gui->fingerClicks < 1)
-        cleanup(gui, event);
-      scroll(pos - prevPos);
-      prevPos = pos;
-      return true;
+      return gui->sendEvent(window(), this, event);
     }
-
     if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
-      cleanup(gui, event);
-      setOverscroll(0);
-      if(event->type == SDL_FINGERUP && gui->fingerClicks > 0) {  //gui->totalFingerDist < 20 &&
+      if(event->type == SDL_FINGERUP && tappedWidget) {  //gui->fingerClicks > 0) {
+        cleanup(gui, event);
+        setOverscroll(0);
         // cancel any panning
         scroll(initialPos - prevPos);
         flingV = Point(0, 0);
         gui->sendEvent(window(), widget, &pressEvent);
         gui->sendEvent(window(), widget, event);
       }
-      else {
+      else
         gui->sendEvent(window(), this, event);
-      }
-      // take focus if tappedWidget didn't
-      Widget* focused = window()->focusedWidget;
-      if(!focused || !focused->isDescendantOf(this))
-        gui->setFocused(this);
       return true;
     }
-
-    return false;  //forwardEvent(gui, event, gui->prevFingerPos);
+    return false;
   };
 
   contents->onApplyLayout = [this](const Rect& src, const Rect& dest) {

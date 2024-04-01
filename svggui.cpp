@@ -1585,6 +1585,7 @@ bool SvgGui::sendEventFilt(Window* win, Widget* widget, SDL_Event* event)
   while(filtwidget) {
     if(filtwidget->eventFilter)  //&& filtwidget != pressedWidget
       filterWidgets.push_back(filtwidget);
+    if(filtwidget->widgetClass() == Widget::AbsPosWidgetClass) break;
     filtwidget = filtwidget->parent();
   }
   //if(pressedWidget && pressedWidget->eventFilter)
