@@ -154,7 +154,7 @@ Button::Button(SvgNode* n) : Widget(n), mMenu(NULL), m_checked(false)
     }
     else if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
       gui->closeMenus(this);  // close sibling menu if any
-      if(mMenu) {
+      if(mMenu && gui->lastClosedMenu != mMenu) {
         gui->showMenu(mMenu);
         gui->setPressed(mMenu);
       }
@@ -301,24 +301,8 @@ Menu::Menu(SvgNode* n, int align) : AbsPosWidget(n)
       }
       return true;
     }
-    if(event->type == SvgGui::OUTSIDE_MODAL) {
-      gui->closeMenus(this->parent(), true);  // close entire menu tree
-      // never swallow right clicks (since context menu parent is whole container ... would it be better for
-      //  Menu to have bool isContextMenu member?
-      // I think swallowing left clicks is reasonable so user can close context menu w/o activating anything
-      if(event->user.data1 && isLongPressOrRightClick(static_cast<SDL_Event*>(event->user.data1)))
-        return false;
-
-      // send finger down event now that modal has been closed
-      gui->sendEvent(window(), static_cast<Widget*>(event->user.data2), static_cast<SDL_Event*>(event->user.data1));
-      // close this menu if it was reopened
-      if(isVisible())
-        gui->closeMenus(this->parent(), true);
-      return true;
-
-      // swallow event (i.e. return true) if click was within menu's parent to prevent reopening
-      //return isDescendent(static_cast<Widget*>(event->user.data2), parent());
-    }
+    if(event->type == SvgGui::OUTSIDE_MODAL)
+      gui->closeMenus(this->parent(), true);  // close entire menu tree; note we don't swallow event
     return false;
   });
 
@@ -1126,7 +1110,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
             }
           }
           // drag event not accepted
-          gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, this);
+          gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, NULL);  //this);
           gui->pressedWidget = this;
         }
       }

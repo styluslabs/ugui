@@ -11,22 +11,7 @@ std::string colorToHex(Color c)
 
 Button* createColorBtn()
 {
-  static const char* colorPreviewSVG = R"#(
-    <g class="color_preview previewbtn">
-      <pattern id="checkerboard" x="0" y="0" width="18" height="18"
-          patternUnits="userSpaceOnUse" patternContentUnits="userSpaceOnUse">
-        <rect fill="black" fill-opacity="0.1" x="0" y="0" width="9" height="9"/>
-        <rect fill="black" fill-opacity="0.1" x="9" y="9" width="9" height="9"/>
-      </pattern>
-
-      <rect fill="white" x="1" y="1" width="35" height="35" />
-      <rect fill="url(#checkerboard)" x="1" y="1" width="35" height="35" />
-      <rect class="btn-color" stroke="currentColor" stroke-width="2" fill="blue" x="1" y="1" width="35" height="35" />
-    </g>
-  )#";
-
-  SvgNode* colorBtnNode = widgetNode("#colorbutton");
-  return new Button(colorBtnNode ? colorBtnNode : loadSVGFragment(colorPreviewSVG));
+  return new Button(widgetNode("#colorbutton"));
 }
 
 ColorEditBox* createColorEditBox(bool allowAlpha, bool withColorPicker)
@@ -210,7 +195,7 @@ Slider* ColorSliders::createGroup(
 static Widget* createTabBar(const std::vector<std::string>& titles, std::function<void(int)> onChanged)
 {
   Widget* row = createRow();
-  for(int ii = 0; ii < titles.size(); ++ii) {
+  for(size_t ii = 0; ii < titles.size(); ++ii) {
     Button* btn = createToolbutton(NULL, titles[ii].c_str(), true);
     btn->node->addClass("tabbar-btn");
     if(ii == 0) btn->setChecked(true);

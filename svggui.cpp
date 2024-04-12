@@ -802,20 +802,21 @@ void SvgGui::closeMenus(const Widget* parent_menu, bool closegroup)
   if(menuStack.empty())
     return;
   if(parent_menu) {
-    if(closegroup) parent_menu = getPressedGroupContainer(const_cast<Widget*>(parent_menu));
+    if(closegroup)
+      parent_menu = getPressedGroupContainer(const_cast<Widget*>(parent_menu));
     // can we do better than checking for class=menu?
     while(parent_menu && !parent_menu->node->hasClass("menu"))
       parent_menu = parent_menu->parent();
-    //if(!parent_menu)  -- this breaks menubar behavior
-    //  return;
+    //if(!parent_menu) return;  -- this breaks menubar behavior
   }
   while(!menuStack.empty() && menuStack.back() != parent_menu) {
     Widget* menu = menuStack.back();
     menuStack.pop_back();
-    //onHideWidget(menu);
     menu->setVisible(false);  // this now calls onHideWidget
     menu->parent()->node->removeClass("pressed");
-    //if(menu == openedContextMenu) openedContextMenu = NULL;
+    // with, e.g., ScrollWidget, open menu (modal) is closed on finger down, but next menu is not opened
+    //  until finger up, so previous tricks with swallowing events, checking for menu reopen don't work
+    lastClosedMenu = menu;
   }
 
   Window* win = windows.back();  // menuStack.empty() ? windows.back() : menuStack.back()->window();
@@ -1306,6 +1307,8 @@ void SvgGui::updateGestures(SDL_Event* event)
         (t - fingerUpDnTime < 40 ? fingerClicks : fingerClicks + 1) : 1;
     totalFingerDist = 0;
     fingerUpDnTime = t;
+    // too hacky putting this here?
+    lastClosedMenu = NULL;
   }
   else if(event->type == SDL_FINGERMOTION) {
     // fling ... I think FIR type filter is more robust to input timing variation then IIR type

@@ -348,5 +348,17 @@ static const char* defaultWidgetSVG = R"#(
 
   <rect id="scroll-handle" class="scroll-handle" box-anchor="vfill" width="4" height="20" rx="2" ry="2"/>
 
+  <g id="colorbutton" class="color_preview previewbtn">
+    <pattern id="checkerboard" x="0" y="0" width="18" height="18"
+        patternUnits="userSpaceOnUse" patternContentUnits="userSpaceOnUse">
+      <rect fill="black" fill-opacity="0.1" x="0" y="0" width="9" height="9"/>
+      <rect fill="black" fill-opacity="0.1" x="9" y="9" width="9" height="9"/>
+    </pattern>
+
+    <rect fill="white" x="1" y="1" width="35" height="35" />
+    <rect fill="url(#checkerboard)" x="1" y="1" width="35" height="35" />
+    <rect class="btn-color" stroke="currentColor" stroke-width="2" fill="blue" x="1" y="1" width="35" height="35" />
+  </g>
+
 </svg>
 )#";

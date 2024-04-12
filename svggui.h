@@ -228,6 +228,7 @@ public:
   Widget* hoveredWidget = NULL;
   Widget* nextInputWidget = NULL;
   Widget* currInputWidget = NULL;
+  Widget* lastClosedMenu = NULL;
   std::vector<Widget*> menuStack;
 
   // widget for event currently being processed
