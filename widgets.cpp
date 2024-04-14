@@ -104,11 +104,13 @@ Widget* createTitledRow(const char* title, Widget* control1, Widget* control2)
   return row;
 }
 
-Widget* createHRule(int height)
+Widget* createHRule(int height, const char* margin)
 {
   SvgRect* hrule = new SvgRect(Rect::wh(20, height));
   hrule->setAttribute("box-anchor", "hfill");
   hrule->addClass("hrule");
+  if(margin)
+    hrule->setAttribute("margin", margin);
   return new Widget(hrule);
 }
 
@@ -969,6 +971,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   yHandle = new Widget(widgetNode("#scroll-handle"));
   addWidget(yHandle);
   yHandle->updateLayoutVars();  // this caching is stupid
+  yHandle->node->setAttr<float>("opacity", 0.0);
 
   // overlay widget to intercept events
   //Widget* overlay = createFillRect(false);
@@ -1000,7 +1003,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       }
       return true;
     }
-    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
+    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
       prevPos = Point(event->tfinger.x, event->tfinger.y);
       //prevEventTime = event->tfinger.timestamp;
       initialPos = prevPos;
@@ -1270,6 +1273,13 @@ void ScrollWidget::scroll(Point dr)
     //  pos.y = scrollLimits.top + overScroll/(ty/overScroll + 1);
     //else if(by > 0)
     //  pos.y = scrollLimits.bottom - overScroll/(by/overScroll + 1);
+
+    yHandle->node->setAttr<float>("opacity", 1.0);
+    fadeTimer = window()->gui()->setTimer(750, this, fadeTimer, [this, opacity=1.0]() mutable {
+      opacity -= flingTimerMs/750.0;
+      yHandle->node->setAttr<float>("opacity", std::max(0.0, opacity));
+      return opacity > 0 ? flingTimerMs : 0;
+    });
   }
 
   setScrollPos(pos);

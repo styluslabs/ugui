@@ -137,7 +137,7 @@ tspan.weak { fill: var(--text-weak); }
 /* margin of .textbox-container must match stroke-width of .inputbox-bg */
 .textbox-container { margin: 0 2; }
 
-.hrule { fill: grey; }
+.hrule { fill: var(--light); }
 .hrule.title { fill: var(--title); }
 .hrule.title.inactive { fill: #D8D8D8; }
 
@@ -269,9 +269,11 @@ static const char* defaultWidgetSVG = R"#(
 
   <g id="checkbox" class="checkbox">
     <rect fill="none" width="26" height="26"/>
-    <rect x="4" y="4" fill="none" stroke="currentColor" stroke-width="1" width="18" height="18"/>
-    <polygon class="checkmark" fill="currentColor"
-        points="25.38,4.92,23.18,2.72,12.72,13.29,8.53,9.12,6.33,11.32,12.73,17.69,13.85,16.57,13.84,16.56"/>
+    <rect x="4" y="4" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.5" width="18" height="18"/>
+    <g class="checkmark">
+      <rect x="3.25" y="3.25" fill="currentColor" width="19.5" height="19.5"/>
+      <path fill="none" stroke="white" stroke-width="12" transform="translate(3.25, 3.25) scale(0.20)" d="M15 45 L40 70 L85 25"/>
+    </g>
   </g>
 
   <!-- non-editable textbox for combobox and spinbox -->

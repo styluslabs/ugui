@@ -266,6 +266,7 @@ private:
 
   Widget* tappedWidget = NULL;
   SDL_Event pressEvent = {0};
+  Timer* fadeTimer = NULL;
 };
 
 class Dialog : public Window
@@ -342,7 +343,7 @@ Widget* createStretch();
 Widget* createRow(const char* justify = "", const char* margin = "");
 Widget* createColumn(const char* justify = "", const char* margin = "");
 Widget* createTitledRow(const char* title, Widget* control1, Widget* control2 = NULL);
-Widget* createHRule(int height = 2);
+Widget* createHRule(int height = 2, const char* margin = NULL);
 Widget* createFillRect(bool hasfill = true);
 void setMinWidth(Widget* widget, real w, const char* sel = ".min-width-rect");
 void setupTooltip(Widget* target, const char* tiptext, int align=-1);
