@@ -1004,6 +1004,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       return true;
     }
     if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
+      if(gui->pressedWidget == this) return true;  // stop propagation of testPassThru event
       prevPos = Point(event->tfinger.x, event->tfinger.y);
       //prevEventTime = event->tfinger.timestamp;
       initialPos = prevPos;
@@ -1025,7 +1026,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         }
         return 0;
       });
-      setOverscroll(40);
+      setOverscroll(60);
       gui->pressedWidget = this;
       return true;
     }
@@ -1102,8 +1103,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     if(event->type == SDL_FINGERMOTION) {
       if(testPassThru) {
         testPassThru = false;
-        Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
         if(gui->sendEvent(window(), tappedWidget, &pressEvent) && gui->pressedWidget != this) {
+          Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
           if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
               || (scrollLimits.height() == 0 && dr.y >= 2*dr.x)) {
             if(gui->sendEvent(window(), widget, event)) {
@@ -1251,29 +1252,22 @@ void ScrollWidget::scroll(Point dr)
 
   // iOS seems to just switch to 1/2 speed scrolling beyond static limit
   if(scrollLimits.width() > 0) {
-    real lx = (scrollLimits.left + overScroll) - pos.x;
-    real rx = pos.x - (scrollLimits.right - overScroll);
+    real lx = std::max(staticLimits.left - pos.x, staticLimits.left - scrollX);
+    real rx = std::max(pos.x - staticLimits.right, scrollX - staticLimits.right);
     if(lx > 0) pos.x += std::min(dr.x, lx)/2;
     else if(rx > 0) pos.x += std::max(dr.x, -rx)/2;
-
-    //if(lx > 0)
-    //  pos.x = scrollLimits.left + overScroll/(lx/overScroll + 1);
-    //else if(rx > 0)
-    //  //pos.x = scrollLimits.right - overScroll + overScroll*(1 - 1/(rx + 1));  rx - rx/(rx+1) rx - 1/(1 + 1/rx))
-    //  // s*(1 - 1/(rx/s + 1))   s - s/(rx/s + 1)
-    //  pos.x = scrollLimits.right - overScroll/(rx/overScroll + 1);
   }
 
   if(scrollLimits.height() > 0) {
-    real ty = (scrollLimits.top + overScroll) - pos.y;
-    real by = pos.y - (scrollLimits.bottom - overScroll);
+    real ty = std::max(staticLimits.top - pos.y, staticLimits.top - scrollY);
+    real by = std::max(pos.y - staticLimits.bottom, scrollY - staticLimits.bottom);
     if(ty > 0) pos.y += std::min(dr.y, ty)/2;
     else if(by > 0) pos.y += std::max(dr.y, -by)/2;
-    //if(ty > 0)
-    //  pos.y = scrollLimits.top + overScroll/(ty/overScroll + 1);
-    //else if(by > 0)
-    //  pos.y = scrollLimits.bottom - overScroll/(by/overScroll + 1);
 
+    PLATFORM_LOG("prevPos.y: %.2f, dy: %.2f, ty: %.2f, by: %.2f; final dy: %.2f\n", prevPos.y, dr.y, ty, by, scrollY - pos.y);
+
+    //if(ty > 0) pos.y = scrollLimits.top + overScroll/(ty/overScroll + 1);
+    //else if(by > 0) pos.y = scrollLimits.bottom - overScroll/(by/overScroll + 1);
     yHandle->node->setAttr<float>("opacity", 1.0);
     fadeTimer = window()->gui()->setTimer(750, this, fadeTimer, [this, opacity=1.0]() mutable {
       opacity -= flingTimerMs/750.0;
