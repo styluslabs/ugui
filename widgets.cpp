@@ -973,15 +973,10 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   yHandle->updateLayoutVars();  // this caching is stupid
   yHandle->node->setAttr<float>("opacity", 0.0);
 
-  // overlay widget to intercept events
-  //Widget* overlay = createFillRect(false);
-  //overlay->isEventFilter = true;
-  //addWidget(overlay);
-  isFocusable = true;
-
-  // putting handler on overlay instead of ScrollWidget prevents events sent to content from filtering back
-  //  up to handler; for the same reason, we set ScrollWidget as pressedWidget instead of overlay
-  addHandler([this](SvgGui* gui, SDL_Event* event) {
+  // use yHandle instead of "this" for keyboard events because adding/removing "focused" class causes
+  //  restyle, which would restyle everything in contents!
+  yHandle->isFocusable = true;
+  yHandle->addHandler([this](SvgGui* gui, SDL_Event* event) {
     if(event->type == SDL_KEYDOWN) {
       if(event->key.keysym.sym == SDLK_PAGEUP)
         scroll(Point(0, node->bounds().height()));
@@ -995,6 +990,14 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         return false;
       return true;
     }
+    //if(event->type == SvgGui::FOCUS_GAINED && event->user.code == SvgGui::REASON_PRESSED)
+    //  scroll({0, 0});  // show yHandle (with fade out)
+    return false;
+  });
+
+  // putting handler on overlay instead of ScrollWidget prevents events sent to content from filtering back
+  //  up to handler; for the same reason, we set ScrollWidget as pressedWidget instead of overlay
+  addHandler([this](SvgGui* gui, SDL_Event* event) {
     if(event->type == SDL_MOUSEWHEEL) {
       scroll(Point(0, event->wheel.y/12.0));  // wheel.x,y are now multiplied by 120
       if(flingV != Point(0, 0)) {
@@ -1055,7 +1058,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         }
         Widget* focused = window()->focusedWidget;
         if(!focused || !focused->isDescendantOf(this))
-          gui->setFocused(this);
+          gui->setFocused(yHandle);
       }
       return true;
     }
@@ -1249,7 +1252,6 @@ void ScrollWidget::setOverscroll(real d)
 void ScrollWidget::scroll(Point dr)
 {
   Point pos = Point(scrollX, scrollY) - dr;
-
   // iOS seems to just switch to 1/2 speed scrolling beyond static limit
   if(scrollLimits.width() > 0) {
     real lx = std::max(staticLimits.left - pos.x, staticLimits.left - scrollX);
@@ -1257,15 +1259,12 @@ void ScrollWidget::scroll(Point dr)
     if(lx > 0) pos.x += std::min(dr.x, lx)/2;
     else if(rx > 0) pos.x += std::max(dr.x, -rx)/2;
   }
-
   if(scrollLimits.height() > 0) {
     real ty = std::max(staticLimits.top - pos.y, staticLimits.top - scrollY);
     real by = std::max(pos.y - staticLimits.bottom, scrollY - staticLimits.bottom);
     if(ty > 0) pos.y += std::min(dr.y, ty)/2;
     else if(by > 0) pos.y += std::max(dr.y, -by)/2;
-
-    PLATFORM_LOG("prevPos.y: %.2f, dy: %.2f, ty: %.2f, by: %.2f; final dy: %.2f\n", prevPos.y, dr.y, ty, by, scrollY - pos.y);
-
+    //PLATFORM_LOG("prevPos.y: %.2f, dy: %.2f, ty: %.2f, by: %.2f; final dy: %.2f\n", prevPos.y, dr.y, ty, by, scrollY - pos.y);
     //if(ty > 0) pos.y = scrollLimits.top + overScroll/(ty/overScroll + 1);
     //else if(by > 0) pos.y = scrollLimits.bottom - overScroll/(by/overScroll + 1);
     yHandle->node->setAttr<float>("opacity", 1.0);
@@ -1275,7 +1274,6 @@ void ScrollWidget::scroll(Point dr)
       return opacity > 0 ? flingTimerMs : 0;
     });
   }
-
   setScrollPos(pos);
 }
 

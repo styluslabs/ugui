@@ -1778,6 +1778,9 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
       // SDL shifts entire window to uncover input rect on iOS (which is great!)
       Point winorigin = win ? win->winBounds().origin() : Point(0, 0);
       Rect bbox = (nextInputWidget->node->bounds().translate(winorigin))/inputScale;
+#if PLATFORM_MOBILE
+      bbox.bottom += 20*inputScale;  // make room for selection handles
+#endif
       SDL_Rect r;
       r.x = bbox.left; r.y = bbox.top; r.w = bbox.width(); r.h = bbox.height();
       SDL_SetTextInputRect(&r);
