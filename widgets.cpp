@@ -140,6 +140,18 @@ Widget* Toolbar::addSeparator()
 Toolbar* createToolbar() { return new Toolbar(widgetNode("#toolbar")); }
 Toolbar* createVertToolbar() { return new Toolbar(widgetNode("#vert-toolbar")); }
 
+void setupFocusable(Widget* widget)
+{
+  widget->isFocusable = true;
+  widget->addHandler([widget](SvgGui* gui, SDL_Event* event){
+    if(event->type == SvgGui::FOCUS_GAINED)
+      widget->node->removeClass("focused");
+    else if(event->type == SvgGui::FOCUS_LOST)
+      widget->node->addClass("focused");
+    return false;  // continue to next event handler
+  });
+}
+
 // Note: menubar now implemented as separate class which adds an additional handler to each button
 // if we used a separate class=menuopen instead of class=pressed, we could confine menu stuff to onPressed()
 Button::Button(SvgNode* n) : Widget(n), mMenu(NULL), m_checked(false)
@@ -224,7 +236,7 @@ Button* createPushbutton(const char* title)
 {
   Button* widget = new Button(widgetNode("#pushbutton"));
   widget->setTitle(title);
-  widget->isFocusable = true;  // pushbutton focusable but not toolbutton (?)
+  setupFocusable(widget);  //widget->isFocusable = true;  // pushbutton focusable but not toolbutton (?)
   return widget;
 }
 
@@ -589,7 +601,7 @@ CheckBox* createCheckBox(const char* title, bool checked)
     cbnode = row;
   }
   CheckBox* widget = new CheckBox(cbnode, checked);
-  widget->isFocusable = true;
+  setupFocusable(widget);  //widget->isFocusable = true;
   return widget;
 }
 
@@ -714,7 +726,7 @@ ComboBox* createComboBox(const std::vector<std::string>& items)
   static_cast<SvgG*>(comboNode->selectFirst(".combo_text"))->addChild(widgetNode("#textbox"));
 
   ComboBox* widget = new ComboBox(comboNode, items);
-  widget->isFocusable = true;
+  setupFocusable(widget);  //widget->isFocusable = true;
   return widget;
 }
 
@@ -803,7 +815,7 @@ SpinBox* createSpinBox(real val, real inc, real min, real max, const char* forma
   static_cast<SvgG*>(spinBoxNode->selectFirst(".spinbox_text"))->addChild(widgetNode("#textbox"));
 
   SpinBox* widget = new SpinBox(spinBoxNode, val, inc, min, max, format);
-  widget->isFocusable = true;
+  setupFocusable(widget);  //widget->isFocusable = true;
   if(minwidth > 0)
     setMinWidth(widget, minwidth);
   return widget;
@@ -876,7 +888,7 @@ Slider::Slider(SvgNode* n) : Widget(n), sliderPos(0)
 Slider* createSlider()
 {
   Slider* slider = new Slider(widgetNode("#slider"));
-  slider->isFocusable = true;
+  setupFocusable(widget);  //slider->isFocusable = true;
   return slider;
 }
 
@@ -973,10 +985,12 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   yHandle->updateLayoutVars();  // this caching is stupid
   yHandle->node->setAttr<float>("opacity", 0.0);
 
-  // use yHandle instead of "this" for keyboard events because adding/removing "focused" class causes
-  //  restyle, which would restyle everything in contents!
-  yHandle->isFocusable = true;
-  yHandle->addHandler([this](SvgGui* gui, SDL_Event* event) {
+  // we do not use setupFocusable because adding class=focused would trigger restyle, incl. entire contents!
+  isFocusable = true;
+
+  // putting handler on overlay instead of ScrollWidget prevents events sent to content from filtering back
+  //  up to handler; for the same reason, we set ScrollWidget as pressedWidget instead of overlay
+  addHandler([this](SvgGui* gui, SDL_Event* event) {
     if(event->type == SDL_KEYDOWN) {
       if(event->key.keysym.sym == SDLK_PAGEUP)
         scroll(Point(0, node->bounds().height()));
@@ -990,14 +1004,6 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         return false;
       return true;
     }
-    //if(event->type == SvgGui::FOCUS_GAINED && event->user.code == SvgGui::REASON_PRESSED)
-    //  scroll({0, 0});  // show yHandle (with fade out)
-    return false;
-  });
-
-  // putting handler on overlay instead of ScrollWidget prevents events sent to content from filtering back
-  //  up to handler; for the same reason, we set ScrollWidget as pressedWidget instead of overlay
-  addHandler([this](SvgGui* gui, SDL_Event* event) {
     if(event->type == SDL_MOUSEWHEEL) {
       scroll(Point(0, event->wheel.y/12.0));  // wheel.x,y are now multiplied by 120
       if(flingV != Point(0, 0)) {
@@ -1006,7 +1012,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       }
       return true;
     }
-    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
+    if(event->type == SDL_FINGERDOWN
+        && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
       if(gui->pressedWidget == this) return true;  // stop propagation of testPassThru event
       prevPos = Point(event->tfinger.x, event->tfinger.y);
       //prevEventTime = event->tfinger.timestamp;
@@ -1031,6 +1038,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       });
       setOverscroll(60);
       gui->pressedWidget = this;
+      if(PLATFORM_MOBILE) gui->setFocused(yHandle);  // take focus immediately on mobile (to hide keyboard)
       return true;
     }
     if(event->type == SDL_FINGERMOTION && gui->pressedWidget == this) {
@@ -1041,7 +1049,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       prevPos = pos;
       return true;
     }
-    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+    if(event->type == SDL_FINGERUP
+        || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
       cleanup(gui, event);
       setOverscroll(0);
       if(gui->pressedWidget == this) {
@@ -1084,7 +1093,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
   // event filter should always forward to normal widget so that state handling (hovered, pressed,
   //  modal, etc.) in SvgGui::sendEvent() is not bypassed
   eventFilter = [this](SvgGui* gui, Widget* widget, SDL_Event* event) {
-    if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
+    if(event->type == SDL_FINGERDOWN
+        && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
       tappedWidget = widget;
       pressEvent = *event;
       return gui->sendEvent(window(), this, event);
@@ -1106,6 +1116,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     if(event->type == SDL_FINGERMOTION) {
       if(testPassThru) {
         testPassThru = false;
+        auto backupClosedMenu = gui->lastClosedMenu;
         if(gui->sendEvent(window(), tappedWidget, &pressEvent) && gui->pressedWidget != this) {
           Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
           if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
@@ -1119,17 +1130,23 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
           // drag event not accepted
           gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, NULL);  //this);
           gui->pressedWidget = this;
+          if(PLATFORM_MOBILE) gui->setFocused(yHandle);  // take back focus
         }
+        gui->lastClosedMenu = backupClosedMenu;
       }
       return gui->sendEvent(window(), this, event);
     }
-    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+    if(event->type == SDL_FINGERUP
+        || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
       if(event->type == SDL_FINGERUP && tappedWidget) {  //gui->fingerClicks > 0) {
         cleanup(gui, event);
         setOverscroll(0);
         // cancel any panning
         scroll(initialPos - prevPos);
         flingV = Point(0, 0);
+        gui->removeTimer(fadeTimer);
+        yHandle->node->setAttr<float>("opacity", 0.0);
+        gui->pressedWidget = NULL;
         gui->sendEvent(window(), widget, &pressEvent);
         gui->sendEvent(window(), widget, event);
       }

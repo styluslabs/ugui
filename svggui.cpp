@@ -145,10 +145,8 @@ void Widget::setText(const char* s)
     textnode = static_cast<SvgText*>(node);
   else if(containerNode())
     textnode = static_cast<SvgText*>(containerNode()->selectFirst("text"));
-  if(textnode) {
-    textnode->clearText();
-    textnode->addText(s);
-  }
+  if(textnode)
+    textnode->setText(s);
 }
 
 Widget* Widget::selectFirst(const char* selector) const
@@ -820,19 +818,15 @@ void SvgGui::closeMenus(const Widget* parent_menu, bool closegroup)
   }
 
   Window* win = windows.back();  // menuStack.empty() ? windows.back() : menuStack.back()->window();
-  if(win->focusedWidget && (menuStack.empty() || win->focusedWidget->isDescendantOf(menuStack.back()))) {
+  if(win->focusedWidget && (menuStack.empty() || win->focusedWidget->isDescendantOf(menuStack.back())))
     win->focusedWidget->sdlUserEvent(this, FOCUS_GAINED, REASON_MENU);
-    win->focusedWidget->node->addClass("focused");
-  }
 }
 
 void SvgGui::showMenu(Widget* menu)
 {
   Window* win = windows.back();  //menu->window();
-  if(win->focusedWidget) {
+  if(win->focusedWidget)
     win->focusedWidget->sdlUserEvent(this, FOCUS_LOST, REASON_MENU);
-    win->focusedWidget->node->removeClass("focused");
-  }
   // I think this is the right thing to do, but hold off until we actually need it
   //if(hoveredWidget) {
   //  Widget* modalWidget = !menuStack.empty() ? getPressedGroupContainer(menuStack.front()) : win->modalChild();
@@ -954,10 +948,8 @@ void SvgGui::showWindow(Window* win, Window* parent, bool showModal, Uint32 flag
 #endif
   }
   win->setVisible(true);
-  if(win->focusedWidget) {
+  if(win->focusedWidget)
     win->focusedWidget->sdlUserEvent(this, FOCUS_GAINED, REASON_WINDOW);
-    win->focusedWidget->node->addClass("focused");
-  }
 }
 
 void SvgGui::closeWindow(Window* win)
@@ -992,10 +984,8 @@ void SvgGui::closeWindow(Window* win)
 #endif
 
   //ASSERT(windows.size() > 1 && "Cannot close last window - delete SvgGui instead");
-  if(!windows.empty() && windows.back()->focusedWidget) {
+  if(!windows.empty() && windows.back()->focusedWidget)
     windows.back()->focusedWidget->sdlUserEvent(this, FOCUS_GAINED, REASON_WINDOW);
-    windows.back()->focusedWidget->node->addClass("focused");
-  }
 }
 
 void SvgGui::showModal(Window* modal, Window* parent)
@@ -1020,16 +1010,10 @@ bool SvgGui::setFocused(Widget* widget, FocusReason reason)
     return true;
   if(!widget)
     return false;
-  if(win->focusedWidget) {
-    // user.data1 will be the widget gaining focus
-    win->focusedWidget->sdlUserEvent(this, FOCUS_LOST, reason, widget);
-    win->focusedWidget->node->removeClass("focused");
-  }
+  if(win->focusedWidget)
+    win->focusedWidget->sdlUserEvent(this, FOCUS_LOST, reason, widget);  // user.data1 is the widget gaining focus
   win->focusedWidget = widget;
   widget->sdlUserEvent(this, FOCUS_GAINED, reason);
-  // allow receiving widget to clear focusedWidget (or set it to a different widget)
-  if(win->focusedWidget)
-    win->focusedWidget->node->addClass("focused");
   return true;
 }
 
@@ -1073,7 +1057,6 @@ void SvgGui::onHideWidget(Widget* widget)
   Window* win = widget->window();
   if(win->focusedWidget && win->focusedWidget->isDescendantOf(widget)) {
     win->focusedWidget->sdlUserEvent(this, FOCUS_LOST, REASON_HIDDEN, widget != win ? win : NULL);
-    win->focusedWidget->node->removeClass("focused");
     // if hiding window, focusedWidget will be restored when reshown
     if(widget != win)
       win->focusedWidget = NULL;
@@ -1163,10 +1146,8 @@ bool SvgGui::sdlWindowEvent(SDL_Event* event)
     break;  //return true;
   }
   case SDL_WINDOWEVENT_FOCUS_GAINED:
-    if(fw) {
+    if(fw)
       fw->sdlUserEvent(this, FOCUS_GAINED, REASON_WINDOW);
-      fw->node->addClass("focused");
-    }
     break;
   case SDL_WINDOWEVENT_FOCUS_LOST:
 #if !defined(NDEBUG) && defined(PLATFORM_LINUX)
@@ -1178,10 +1159,8 @@ bool SvgGui::sdlWindowEvent(SDL_Event* event)
     // SDL does not support modal behavior (except on X11), so we have to fake it
     if(win->isModal())
       SDL_RaiseWindow(win->sdlWindow);
-    if(fw) {
+    if(fw)
       fw->sdlUserEvent(this, FOCUS_LOST, REASON_WINDOW);
-      fw->node->removeClass("focused");
-    }
     break; //return true;
   case SDL_WINDOWEVENT_LEAVE:
     if(hoveredWidget) {

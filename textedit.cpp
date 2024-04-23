@@ -52,7 +52,7 @@
 
 TextEdit::TextEdit(SvgNode* n) : TextBox(n)
 {
-  isFocusable = true;
+  //isFocusable = true;  -- handled by setupFocusable() in create...() fns
   textNode = static_cast<SvgText*>(containerNode()->selectFirst(".textedit-text"));
   cursor = new Widget(containerNode()->selectFirst(".text-cursor"));
   cursorHandle = new AbsPosWidget(containerNode()->selectFirst(".selend-handle"));
@@ -684,7 +684,9 @@ TextEdit* createTextEdit(int width)
     SvgRect* node = static_cast<SvgRect*>(textEditNode->selectFirst(".min-width-rect"));
     node->setRect(Rect::wh(width, node->getRect().height()));
   }
-  return new TextEdit(textEditNode);
+  TextEdit* widget = TextEdit(textEditNode);
+  setupFocusable(widget);
+  return widget;
 }
 
 SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* format, real minwidth)
@@ -695,8 +697,7 @@ SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* f
 
   TextEdit* textEdit = new TextEdit(textEditNode);
   SpinBox* spinBox = new SpinBox(spinBoxNode, val, inc, min, max, format);
-  spinBox->isFocusable = true;
-  textEdit->isFocusable = false;
+  setupFocusable(spinBox);  // spinBox->isFocusable = true; textEdit->isFocusable = false;
   //textEdit->onChanged = [spinBox](const char* s){ spinBox->updateValueFromText(s); };
   spinBox->addHandler([=](SvgGui* gui, SDL_Event* event){
     if(event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_RETURN) {
@@ -719,8 +720,7 @@ ComboBox* createTextComboBox(const std::vector<std::string>& items)
 
   TextEdit* textEdit = new TextEdit(textEditNode);
   ComboBox* comboBox = new ComboBox(comboBoxNode, items);
-  comboBox->isFocusable = true;
-  textEdit->isFocusable = false;
+  setupFocusable(spinBox);  //comboBox->isFocusable = true; textEdit->isFocusable = false;
   textEdit->onChanged = [comboBox](const char* s){ comboBox->updateFromText(s); };
   return comboBox;
 }

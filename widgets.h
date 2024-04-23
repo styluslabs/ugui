@@ -347,3 +347,4 @@ Widget* createHRule(int height = 2, const char* margin = NULL);
 Widget* createFillRect(bool hasfill = true);
 void setMinWidth(Widget* widget, real w, const char* sel = ".min-width-rect");
 void setupTooltip(Widget* target, const char* tiptext, int align=-1);
+void setupFocusable(Widget* widget);
