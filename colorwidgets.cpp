@@ -51,6 +51,7 @@ ColorEditBox::ColorEditBox(SvgNode* n, ColorSliders* _colorPicker, bool allowalp
 
   hexEdit = new TextEdit(containerNode()->selectFirst(".textbox"));
   setMinWidth(hexEdit, 100);
+  setupFocusable(hexEdit);
 
   // show color picker when color preview is clicked; an alternative would be to show when text edit has focus
   previewBtn = createColorBtn(); //new Button(structureNode()->selectFirst(".colorbox_preview"));

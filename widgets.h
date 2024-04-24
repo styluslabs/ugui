@@ -340,8 +340,10 @@ Slider* createSlider();
 Dialog* createDialog(const char* title, const SvgNode* icon = NULL);
 SvgText* createTextNode(const char* text);
 Widget* createStretch();
-Widget* createRow(const char* justify = "", const char* margin = "");
-Widget* createColumn(const char* justify = "", const char* margin = "");
+Widget* createRow(std::initializer_list<Widget*> contents = {},
+    const char* margin = "", const char* justify = "", const char* boxanchor = "hfill");
+Widget* createColumn(std::initializer_list<Widget*> contents = {},
+    const char* margin = "", const char* justify = "",  const char* boxanchor = "vfill");
 Widget* createTitledRow(const char* title, Widget* control1, Widget* control2 = NULL);
 Widget* createHRule(int height = 2, const char* margin = NULL);
 Widget* createFillRect(bool hasfill = true);

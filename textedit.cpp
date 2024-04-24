@@ -684,7 +684,7 @@ TextEdit* createTextEdit(int width)
     SvgRect* node = static_cast<SvgRect*>(textEditNode->selectFirst(".min-width-rect"));
     node->setRect(Rect::wh(width, node->getRect().height()));
   }
-  TextEdit* widget = TextEdit(textEditNode);
+  TextEdit* widget = new TextEdit(textEditNode);
   setupFocusable(widget);
   return widget;
 }
@@ -720,7 +720,7 @@ ComboBox* createTextComboBox(const std::vector<std::string>& items)
 
   TextEdit* textEdit = new TextEdit(textEditNode);
   ComboBox* comboBox = new ComboBox(comboBoxNode, items);
-  setupFocusable(spinBox);  //comboBox->isFocusable = true; textEdit->isFocusable = false;
+  setupFocusable(comboBox);  //comboBox->isFocusable = true; textEdit->isFocusable = false;
   textEdit->onChanged = [comboBox](const char* s){ comboBox->updateFromText(s); };
   return comboBox;
 }

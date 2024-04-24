@@ -48,11 +48,11 @@ SvgNode* widgetNode(const char* sel)
   return cloned;
 }
 
-static SvgG* createRowNode(const char* justify = "", const char* margin = "")
+static SvgG* createRowNode(const char* justify = "", const char* margin = "", const char* boxanchor = "hfill")
 {
   SvgG* row = new SvgG;
   row->addClass("row-layout");
-  row->setAttribute("box-anchor", "hfill");
+  row->setAttribute("box-anchor", boxanchor);
   row->setAttribute("layout", "flex");
   row->setAttribute("flex-direction", "row");
   if(justify && justify[0])
@@ -62,23 +62,29 @@ static SvgG* createRowNode(const char* justify = "", const char* margin = "")
   return row;
 }
 
-Widget* createRow(const char* justify, const char* margin)
+Widget* createRow(std::initializer_list<Widget*> contents, const char* margin, const char* justify, const char* boxanchor)
 {
-  return new Widget(createRowNode(justify, margin));
+  Widget* widget = new Widget(createRowNode(justify, margin, boxanchor));
+  for(Widget* w : contents)
+    widget->addWidget(w);
+  return widget;
 }
 
-Widget* createColumn(const char* justify, const char* margin)
+Widget* createColumn(std::initializer_list<Widget*> contents, const char* margin, const char* justify, const char* boxanchor)
 {
   SvgG* col = new SvgG;
   col->addClass("col-layout");
-  col->setAttribute("box-anchor", "vfill");
+  col->setAttribute("box-anchor", boxanchor);
   col->setAttribute("layout", "flex");
   col->setAttribute("flex-direction", "column");
   if(justify && justify[0])
     col->setAttribute("justify-content", justify);
   if(margin && margin[0])
     col->setAttribute("margin", margin);
-  return new Widget(col);
+  Widget* widget = new Widget(col);
+  for(Widget* w : contents)
+    widget->addWidget(w);
+  return widget;
 }
 
 SvgText* createTextNode(const char* text)
@@ -92,7 +98,7 @@ SvgText* createTextNode(const char* text)
 // createTitledRow("Name", NULL, widget) to get gap between title and widget
 Widget* createTitledRow(const char* title, Widget* control1, Widget* control2)
 {
-  Widget* row = createRow("space-between", "5 0");
+  Widget* row = createRow({}, "5 0", "space-between");
   if(title) {
     SvgText* titlenode = createTextNode(title);
     titlenode->setAttribute("margin", control1 ? "4 0" : "4 16 4 0");
@@ -888,7 +894,7 @@ Slider::Slider(SvgNode* n) : Widget(n), sliderPos(0)
 Slider* createSlider()
 {
   Slider* slider = new Slider(widgetNode("#slider"));
-  setupFocusable(widget);  //slider->isFocusable = true;
+  setupFocusable(slider);  //slider->isFocusable = true;
   return slider;
 }
 
