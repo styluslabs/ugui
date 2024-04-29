@@ -151,9 +151,9 @@ void setupFocusable(Widget* widget)
   widget->isFocusable = true;
   widget->addHandler([widget](SvgGui* gui, SDL_Event* event){
     if(event->type == SvgGui::FOCUS_GAINED)
-      widget->node->removeClass("focused");
-    else if(event->type == SvgGui::FOCUS_LOST)
       widget->node->addClass("focused");
+    else if(event->type == SvgGui::FOCUS_LOST)
+      widget->node->removeClass("focused");
     return false;  // continue to next event handler
   });
 }
