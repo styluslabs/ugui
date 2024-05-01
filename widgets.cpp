@@ -143,8 +143,15 @@ Widget* Toolbar::addSeparator()
   return sep;
 }
 
-Toolbar* createToolbar() { return new Toolbar(widgetNode("#toolbar")); }
-Toolbar* createVertToolbar() { return new Toolbar(widgetNode("#vert-toolbar")); }
+Toolbar* createToolbar(std::initializer_list<Widget*> contents, const char* tbnode)
+{
+  Toolbar* tb = new Toolbar(widgetNode(tbnode));
+  Widget* cc = tb->selectFirst(".child-container");
+  for(Widget* w : contents) cc->addWidget(w);
+  return tb;
+}
+
+Toolbar* createVertToolbar(std::initializer_list<Widget*> contents) { return createToolbar(contents, "#vert-toolbar"); }
 
 void setupFocusable(Widget* widget)
 {
@@ -1035,8 +1042,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         if(gui->pressedWidget == this && tappedWidget) {  //gui->fingerClicks > 0) {
           SDL_Event enterleave = {0};
           enterleave.type = SvgGui::ENTER;
-          enterleave.user.timestamp = pressEvent.common.timestamp;
-          enterleave.user.data1 = &pressEvent;
+          enterleave.user.timestamp = gui->pressEvent.common.timestamp;
+          enterleave.user.data1 = &gui->pressEvent;
           gui->sendEvent(window(), tappedWidget, &enterleave);
           enterEventSent = true;
         }
@@ -1102,7 +1109,6 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     if(event->type == SDL_FINGERDOWN
         && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
       tappedWidget = widget;
-      pressEvent = *event;
       return gui->sendEvent(window(), this, event);
     }
     if(isLongPressOrRightClick(event)) {
@@ -1123,7 +1129,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       if(testPassThru) {
         testPassThru = false;
         auto backupClosedMenu = gui->lastClosedMenu;
-        if(gui->sendEvent(window(), tappedWidget, &pressEvent) && gui->pressedWidget != this) {
+        if(gui->sendEvent(window(), tappedWidget, &gui->pressEvent) && gui->pressedWidget != this) {
           Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
           if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
               || (scrollLimits.height() == 0 && dr.y >= 2*dr.x)) {
@@ -1153,7 +1159,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         gui->removeTimer(fadeTimer);
         yHandle->node->setAttr<float>("opacity", 0.0);
         gui->pressedWidget = NULL;
-        gui->sendEvent(window(), widget, &pressEvent);
+        gui->sendEvent(window(), widget, &gui->pressEvent);
         gui->sendEvent(window(), widget, event);
       }
       else
@@ -1294,6 +1300,7 @@ void ScrollWidget::scroll(Point dr)
     fadeTimer = window()->gui()->setTimer(750, this, fadeTimer, [this, opacity=1.0]() mutable {
       opacity -= flingTimerMs/750.0;
       yHandle->node->setAttr<float>("opacity", std::max(0.0, opacity));
+      if(opacity <= 0) fadeTimer = NULL;
       return opacity > 0 ? flingTimerMs : 0;
     });
   }

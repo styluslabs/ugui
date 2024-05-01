@@ -265,7 +265,6 @@ private:
   bool testPassThru = false;
 
   Widget* tappedWidget = NULL;
-  SDL_Event pressEvent = {0};
   Timer* fadeTimer = NULL;
 };
 
@@ -328,8 +327,8 @@ Menu* createMenu(int align, bool showicons = true);
 Button* createMenuItem(const char* title, const SvgNode* icon = NULL);
 Button* createCheckBoxMenuItem(const char* title, const char* cbnode = "#checkbox");
 Button* createMenuItem(Widget* contents);
-Toolbar* createToolbar();
-Toolbar* createVertToolbar();
+Toolbar* createToolbar(std::initializer_list<Widget*> contents = {}, const char* tbnode = "#toolbar");
+Toolbar* createVertToolbar(std::initializer_list<Widget*> contents = {});
 Button* createToolbutton(const SvgNode* icon, const char* title = "", bool showTitle = false);
 Button* createPushbutton(const char* title);
 CheckBox* createCheckBox(const char* title = "", bool checked = false);

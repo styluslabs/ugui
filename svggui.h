@@ -234,6 +234,7 @@ public:
   // widget for event currently being processed
   Widget* eventWidget = NULL;
   SDL_Event* currSDLEvent = NULL;
+  SDL_Event pressEvent;
 
   std::unique_ptr<std::thread> timerThread;
   Semaphore timerSem;

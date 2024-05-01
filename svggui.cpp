@@ -1272,6 +1272,7 @@ void SvgGui::updateGestures(SDL_Event* event)
   static constexpr float MIN_FLING_SECS = 0.03;
   static constexpr real MIN_FLING_DIST = 40;  // user can check totalFingerDist if larger threshold desired
   static constexpr real MAX_CLICK_DIST = 20;
+  static constexpr real MAX_DBL_CLICK_DIST = 32;
   static constexpr int MAX_CLICK_MSEC = 400;
 
   Point p(event->tfinger.x, event->tfinger.y);
@@ -1282,10 +1283,11 @@ void SvgGui::updateGestures(SDL_Event* event)
     prevPoints.clear();
     prevPoints.push_back({event->tfinger.fingerId, float(p.x), float(p.y), 0});
     // click ... if time between up and next down is too short, don't count as separate click
-    fingerClicks = t - fingerUpDnTime < MAX_CLICK_MSEC && p.dist(prevFingerPos) < MAX_CLICK_DIST ?
+    fingerClicks = t - fingerUpDnTime < MAX_CLICK_MSEC && p.dist(prevFingerPos) < MAX_DBL_CLICK_DIST ?
         (t - fingerUpDnTime < 40 ? fingerClicks : fingerClicks + 1) : 1;
     totalFingerDist = 0;
     fingerUpDnTime = t;
+    pressEvent = *event;
     // too hacky putting this here?
     lastClosedMenu = NULL;
   }
