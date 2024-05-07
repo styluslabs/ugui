@@ -49,6 +49,7 @@
 #define STB_TEXTEDIT_IMPLEMENTATION
 #include "stb/stb_textedit.h"
 
+int TextEdit::defaultMaxLength = 256;
 
 TextEdit::TextEdit(SvgNode* n) : TextBox(n)
 {
@@ -64,7 +65,12 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
   addHandler([this](SvgGui* gui, SDL_Event* event){ return sdlEventFn(gui, event); });
 
   // context menu
-  Toolbar* popup = createToolbar();
+  contextMenu = createMenu(Menu::FLOATING, false);
+  SvgNode* menunode = contextMenu->selectFirst(".child-container")->node;
+  menunode->addClass("toolbar");
+  menunode->addClass("graybar");
+  menunode->setAttribute("flex-direction", "row");
+
   ctxSelAll = createToolbutton(NULL, "Select All", true);
   ctxSelAll->onClicked = [this](){ selectAll(); showMenu(window()->gui()); };
   ctxCut = createToolbutton(NULL, "Cut", true);
@@ -73,15 +79,10 @@ TextEdit::TextEdit(SvgNode* n) : TextBox(n)
   ctxCopy->onClicked = [this](){ doCopy(true); };
   ctxPaste = createToolbutton(NULL, "Paste", true);
   ctxPaste->onClicked = [this](){ doPaste(); doUpdate(); };
-  popup->addWidget(ctxSelAll);
-  popup->addWidget(ctxCut);
-  popup->addWidget(ctxCopy);
-  popup->addWidget(ctxPaste);
-  popup->node->addClass("graybar");
-
-  contextMenu = new Menu(loadSVGFragment(
-       "<g class='menu child-container' position='absolute' box-anchor='fill' layout='box'></g>"), Menu::FLOATING);  //Menu::RIGHT | Menu::LEFT);
-  contextMenu->addWidget(popup);
+  contextMenu->addItem(ctxSelAll);
+  contextMenu->addItem(ctxCut);
+  contextMenu->addItem(ctxCopy);
+  contextMenu->addItem(ctxPaste);
 
   // code for scrolling text wider than box - taken from ScrollWidget
   Widget* contents = selectFirst(".textbox-content");
@@ -276,13 +277,22 @@ void TextEdit::doCut(bool cutall)
 
 void TextEdit::showMenu(SvgGui* gui)
 {
-  Rect b = selStart != selEnd ? selectionBGRect->bounds().rectIntersect(node->bounds()) : cursor->node->bounds();
-  real w = std::max(100.0, contextMenu->node->bounds().width());
+  Rect b = selStart != selEnd ? selectionBGRect->bounds().rectIntersect(node->bounds()) : Rect();
+  if(!b.isValid()) b = cursor->node->bounds();
   ctxSelAll->setVisible(selStart == selEnd);
   ctxCut->setVisible(!isReadOnly() && selStart != selEnd);
   ctxCopy->setVisible(selStart != selEnd);
   ctxPaste->setVisible(!isReadOnly() && SDL_HasClipboardText());
+  Rect menubounds = contextMenu->node->bounds();
+  real w = std::max(100.0, menubounds.width());
   gui->showContextMenu(contextMenu, Point(b.center().x - w/2, b.bottom + 30), NULL, false);
+  // place menu above text if room
+  real y = b.top - 10;  //- menubounds.height()
+  if(y > 0) {
+    Rect pbounds = contextMenu->parent()->node->bounds();
+    contextMenu->node->removeAttr("top");
+    contextMenu->node->setAttribute("bottom", fstring("%g", pbounds.bottom - y).c_str());
+  }
 }
 
 // note we adjust/expect coordinates for stb_textedit to be relative to textNode origin!
@@ -320,7 +330,9 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     prevPos = Point(event->tfinger.x, event->tfinger.y);
   }
   else if(isLongPressOrRightClick(event)) {
-    showMenu(gui);  //gui->showContextMenu(contextMenu, Point(event->tfinger.x, event->tfinger.y));
+    gui->setFocused(this);
+    selectAll();
+    showMenu(gui);
   }
   else if(event->type == SDL_FINGERMOTION && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
     Point p = Point(event->tfinger.x, event->tfinger.y) - textNode->bounds().origin();
@@ -509,8 +521,10 @@ void TextEdit::doUpdate()
   selEnd = stbState.select_end;
 
   real width = scrollXOffset;  //node->bounds().width();
-  if(textChanged) {
+  if(textChanged)
     glyphPos = SvgDocument::sharedBoundsCalc->glyphPositions(textNode);
+
+  if(textChanged || selChanged) {
     if(selStart != selEnd) {
       real startpos = selmin > 0 ? glyphPos.at(selmin - 1).right : 0;
       real endpos = glyphPos.at(selmax - 1).right;

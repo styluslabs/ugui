@@ -357,8 +357,19 @@ void Widget::serializeAttr(SvgWriter* writer)
 void Widget::setLayoutTransform(const Transform2D& tf)
 {
   if(tf != m_layoutTransform) {
+    //const real* m0 = m_layoutTransform.asArray();
+    //const real* m1 = tf.asArray();
+#if 0 //def NDEBUG
+    if(m1[0] == m0[0] && m1[1] == m0[1] && m1[2] == m0[2] && m1[3] == m0[3]) {
+      if(node->cachedBounds().isValid())
+        translateCachedBounds(node, Point(m1[4] - m0[4], m1[5] - m0[5]));
+      node->setDirty(SvgNode::BOUNDS_DIRTY);
+    }
+    else
+#endif
+      node->invalidate(true);
+
     m_layoutTransform = tf;
-    node->invalidate(true);
   }
 }
 

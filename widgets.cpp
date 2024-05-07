@@ -1313,6 +1313,17 @@ void ScrollWidget::scrollTo(Point r)
   flingV = Point(0, 0);
 }
 
+static void translateCachedBounds(SvgNode* node, const Point& dr)
+{
+  // if node has valid cached bounds, all children should as well, so caller just needs to check top-level node
+  node->m_cachedBounds.translate(dr);
+  auto* cnode = node->asContainerNode();
+  if(cnode) {
+    for(SvgNode* child : cnode->children())
+      translateCachedBounds(child, dr);
+  }
+}
+
 void ScrollWidget::setScrollPos(Point r)
 {
   if(!scrollLimits.isValid())
@@ -1321,7 +1332,18 @@ void ScrollWidget::setScrollPos(Point r)
   real newy = std::max(scrollLimits.top, std::min(scrollLimits.bottom, r.y));
   if(newx == scrollX && newy == scrollY)
     return;
-  contents->setLayoutTransform(Transform2D().translate(scrollX-newx, scrollY-newy) * contents->layoutTransform());
+#ifdef DEBUG_CACHED_BOUNDS
+  contents->setLayoutTransform(Transform2D::translating(scrollX-newx, scrollY-newy) * contents->layoutTransform());
+#else
+  // prevent recalculation of bounds or repeat of layout
+  Point dr(scrollX-newx, scrollY-newy);
+  contents->m_layoutTransform = Transform2D::translating(dr) * contents->m_layoutTransform;
+  if(contents->node->cachedBounds().isValid())
+    translateCachedBounds(contents->node, dr);
+  contents->node->setDirty(SvgNode::PIXELS_DIRTY);
+  real dy = (node->bounds().height() - yHandle->node->bounds().height())*dr.y/staticLimits.bottom;
+  yHandle->setLayoutTransform(Transform2D::translating(0, dy) * yHandle->layoutTransform());
+#endif
   scrollX = newx;
   scrollY = newy;
   if(onScroll)

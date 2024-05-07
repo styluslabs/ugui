@@ -26,9 +26,11 @@ public:
 
   std::function<void(const char*)> onChanged;
 
-  int maxLength = 256;
+  int maxLength = defaultMaxLength;
   enum {NORMAL=0, READ_ONLY=1, PASSWORD=2, PASSWORD_SHOWLAST=3} editMode = NORMAL;
   const char* passChar = u8"\u2022";
+
+  static int defaultMaxLength;
 
 private:
   void doUpdate();
