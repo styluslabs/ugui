@@ -52,7 +52,8 @@ static SvgG* createRowNode(const char* justify = "", const char* margin = "", co
 {
   SvgG* row = new SvgG;
   row->addClass("row-layout");
-  row->setAttribute("box-anchor", boxanchor);
+  if(boxanchor && boxanchor[0])
+    row->setAttribute("box-anchor", boxanchor);
   row->setAttribute("layout", "flex");
   row->setAttribute("flex-direction", "row");
   if(justify && justify[0])
@@ -74,7 +75,8 @@ Widget* createColumn(std::initializer_list<Widget*> contents, const char* margin
 {
   SvgG* col = new SvgG;
   col->addClass("col-layout");
-  col->setAttribute("box-anchor", boxanchor);
+  if(boxanchor && boxanchor[0])
+    col->setAttribute("box-anchor", boxanchor);
   col->setAttribute("layout", "flex");
   col->setAttribute("flex-direction", "column");
   if(justify && justify[0])

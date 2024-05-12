@@ -151,20 +151,16 @@ void Widget::setText(const char* s)
 
 Widget* Widget::selectFirst(const char* selector) const
 {
-  SvgContainerNode* snode = containerNode();
-  SvgNode* hit = snode ? snode->selectFirst(selector) : NULL;
+  SvgNode* hit = node->selectFirst(selector);
   return hit ? (hit->hasExt() ? static_cast<Widget*>(hit->ext()) : new Widget(hit)) : NULL;
 }
 
 std::vector<Widget*> Widget::select(const char* selector) const
 {
+  std::vector<SvgNode*> hits = node->select(selector);
   std::vector<Widget*> result;
-  SvgContainerNode* snode = containerNode();
-  if(snode) {
-    std::vector<SvgNode*> hits = snode->select(selector);
-    for(SvgNode* hit : hits)
-      result.push_back(static_cast<Widget*>(hit->ext()));
-  }
+  for(SvgNode* hit : hits)
+    result.push_back(static_cast<Widget*>(hit->ext()));
   return result;
 }
 
@@ -1298,7 +1294,6 @@ void SvgGui::updateGestures(SDL_Event* event)
         (t - fingerUpDnTime < 40 ? fingerClicks : fingerClicks + 1) : 1;
     totalFingerDist = 0;
     fingerUpDnTime = t;
-    pressEvent = *event;
     // too hacky putting this here?
     lastClosedMenu = NULL;
   }
@@ -1352,6 +1347,10 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
   event->tfinger.y = p.y;
   event->tfinger.dx *= inputScale;  // touch area major, minor axes - used for palm rejection
   event->tfinger.dy *= inputScale;
+  if(event->type == SDL_FINGERDOWN && touchPoints.empty()) {
+    pressEvent = *event;
+    event = &pressEvent;  // make sure possible modification of fingerId below gets applied to pressEvent!
+  }
   updateGestures(event);
   // allow platform interface to send mouse events as finger events
   if(event->tfinger.touchId == SDL_TOUCH_MOUSEID)
