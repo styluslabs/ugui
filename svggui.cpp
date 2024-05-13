@@ -1153,6 +1153,9 @@ bool SvgGui::sdlWindowEvent(SDL_Event* event)
     break;  //return true;
   }
   case SDL_WINDOWEVENT_FOCUS_GAINED:
+#if !defined(NDEBUG) && defined(PLATFORM_LINUX)
+    break;  // don't sent focus gained if we're not sending focus lost (see below)
+#endif
     if(fw)
       fw->sdlUserEvent(this, FOCUS_GAINED, REASON_WINDOW);
     break;
@@ -1770,7 +1773,7 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
       Point winorigin = win ? win->winBounds().origin() : Point(0, 0);
       Rect bbox = (nextInputWidget->node->bounds().translate(winorigin))/inputScale;
 #if PLATFORM_MOBILE
-      bbox.bottom += 20*inputScale;  // make room for selection handles
+      bbox.bottom += 20/inputScale;  // make room for selection handles
 #endif
       SDL_Rect r;
       r.x = bbox.left; r.y = bbox.top; r.w = bbox.width(); r.h = bbox.height();

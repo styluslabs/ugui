@@ -1053,19 +1053,20 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       });
       setOverscroll(60);
       gui->pressedWidget = this;
-      if(PLATFORM_MOBILE) gui->setFocused(yHandle);  // take focus immediately on mobile (to hide keyboard)
       return true;
     }
     if(event->type == SDL_FINGERMOTION && gui->pressedWidget == this) {
       Point pos = Point(event->tfinger.x, event->tfinger.y);
+      if(gui->fingerClicks < 1 && window()->focusedWidget != this)
+        gui->setFocused(this);
       if(tappedWidget && gui->fingerClicks < 1)
         cleanup(gui, event);
       scroll(pos - prevPos);
       prevPos = pos;
       return true;
     }
-    if(event->type == SDL_FINGERUP
-        || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+    // note that SVGGUI_FINGERCANCEL is never sent directly, only as multi-touch event
+    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED) {
       cleanup(gui, event);
       setOverscroll(0);
       if(gui->pressedWidget == this) {
@@ -1082,7 +1083,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         }
         Widget* focused = window()->focusedWidget;
         if(!focused || !focused->isDescendantOf(this))
-          gui->setFocused(yHandle);
+          gui->setFocused(this);
       }
       return true;
     }
@@ -1114,7 +1115,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       return gui->sendEvent(window(), this, event);
     }
     if(isLongPressOrRightClick(event)) {
-      if(gui->sendEvent(window(), widget, event) && gui->pressedWidget != this) {
+      if(gui->sendEvent(window(), widget, event)) {  //&& gui->pressedWidget != this) {
         cleanup(gui, event);
         setOverscroll(0);
       }
@@ -1130,11 +1131,13 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     if(event->type == SDL_FINGERMOTION) {
       if(testPassThru) {
         testPassThru = false;
+        Widget* backupFocused = window()->focusedWidget;
         auto backupClosedMenu = gui->lastClosedMenu;
         if(gui->sendEvent(window(), tappedWidget, &gui->pressEvent) && gui->pressedWidget != this) {
           Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
-          if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dr.x >= 2*dr.y)
-              || (scrollLimits.height() == 0 && dr.y >= 2*dr.x)) {
+          real dx = std::abs(dr.x), dy = std::abs(dr.y);
+          if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dx >= 2*dy)
+              || (scrollLimits.height() == 0 && dy >= 2*dx)) {
             if(gui->sendEvent(window(), widget, event)) {
               cleanup(gui, event);
               setOverscroll(0);
@@ -1144,14 +1147,14 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
           // drag event not accepted
           gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, NULL);  //this);
           gui->pressedWidget = this;
-          if(PLATFORM_MOBILE) gui->setFocused(yHandle);  // take back focus
         }
+        if(window()->focusedWidget != backupFocused)
+          gui->setFocused(this);
         gui->lastClosedMenu = backupClosedMenu;
       }
       return gui->sendEvent(window(), this, event);
     }
-    if(event->type == SDL_FINGERUP
-        || event->type == SvgGui::OUTSIDE_PRESSED || event->type == SVGGUI_FINGERCANCEL) {
+    if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED) {
       if(event->type == SDL_FINGERUP && tappedWidget) {  //gui->fingerClicks > 0) {
         cleanup(gui, event);
         setOverscroll(0);

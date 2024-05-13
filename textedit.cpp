@@ -329,9 +329,9 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     gui->setPressed(this);  // this will set class=focused
     prevPos = Point(event->tfinger.x, event->tfinger.y);
   }
-  else if(isLongPressOrRightClick(event)) {
-    gui->setFocused(this);
-    selectAll();
+  // accept LONGPRESSALTID since widget under press point could have changed (to cursor widget)
+  else if(event->type == SvgGui::LONG_PRESS || isLongPressOrRightClick(event)) {
+    gui->setFocused(this, SvgGui::REASON_TAB);  // no-op if already focused, otherwise select all
     showMenu(gui);
   }
   else if(event->type == SDL_FINGERMOTION && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
@@ -413,14 +413,15 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     }
     uintptr_t packedSel = (uintptr_t)event->user.data2;
     stbState.select_start = packedSel & 0xFFFF;
-    stbState.select_end = packedSel >> 16;
-    stbState.cursor = stbState.select_end;
+    stbState.cursor = stbState.select_end = packedSel >> 16;
+    //PLATFORM_LOG("TextEdit IME_TEXT_CHANGE with text = %s\n", (const char*)event->user.data1);
     textChanged = IME_TEXT_CHANGE;
   }
   else if(event->type == SvgGui::FOCUS_GAINED) {
     if(event->user.code == SvgGui::REASON_TAB)
       selectAll();
-    if(!isReadOnly()) {
+    if(!isReadOnly() && gui->currInputWidget != this) {
+      //PLATFORM_LOG("FOCUS_GAINED (reason %d) is calling setImeText() with text = %s\n", event->user.code, utf32_to_utf8(currText).c_str());
       gui->setImeText(utf32_to_utf8(currText).c_str(), stbState.select_start, stbState.select_end);
       gui->startTextInput(this);
     }
@@ -582,7 +583,7 @@ void TextEdit::doUpdate()
     }
     else if(textChanged > LAYOUT_TEXT_CHANGE)
       cursorHandle->setVisible(false);
-    else if(cursorMoved && stbState.cursor < int(glyphPos.size()))
+    else if(cursorMoved && stbState.cursor < int(glyphPos.size()))  //&& cursor->isVisible())
       cursorHandle->setVisible(true);
     cursorHandle->node->setAttribute("left", std::to_string(hpos - 2).c_str());
   }
@@ -594,8 +595,11 @@ void TextEdit::doUpdate()
     else*/ if(selChanged && selStart == selEnd && contextMenu->isVisible()) // e.g. after cut to clipboard
       gui->closeMenus();
 
-    if(gui->currInputWidget == this && (textChanged || selChanged) && textChanged < IME_TEXT_CHANGE)
+    if(gui->currInputWidget == this && (textChanged > LAYOUT_TEXT_CHANGE || selChanged) && textChanged < IME_TEXT_CHANGE) {
+      //PLATFORM_LOG("doUpdate() is calling setImeText() with text = %s, textChanged = %d and selChanged = %d\n",
+      //             utf32_to_utf8(currText).c_str(), textChanged, selChanged);
       gui->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
+    }
   }
 
   if(textChanged >= USER_TEXT_CHANGE && onChanged)
@@ -662,10 +666,12 @@ SvgNode* textEditInnerNode()
       </g>
 
       <g class="selend-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
-        <circle cx="0" cy="0" r="8"/>
+        <rect fill="none" width="16" height="28"/>
+        <circle cx="8" cy="8" r="8"/>
       </g>
       <g class="selstart-handle cursor-handle" display="none" position="absolute" top="100%" left="0">
-        <circle cx="0" cy="0" r="8"/>
+        <rect fill="none" width="16" height="28"/>
+        <circle cx="8" cy="8" r="8"/>
       </g>
 
     </svg>
