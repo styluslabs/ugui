@@ -133,6 +133,7 @@ public:
   bool isModal() const { return mIsModal; }
   void setModal(bool modal) { mIsModal = modal; }
   WidgetClass_t widgetClass() const override { return WindowClass; }
+  void setWindowXmlClass(const char* xmlcls);
   // may go away as we flesh out event and callback architecture
   SvgGui* gui() { return svgGui; }
 
@@ -143,6 +144,7 @@ public:
   bool mIsModal = false;
   Rect mBounds;
   std::string winTitle;
+  std::string windowXmlClass;
   std::vector<AbsPosWidget*> absPosNodes;
   SDL_Window* sdlWindow = NULL;
 };
@@ -174,6 +176,7 @@ public:
   enum FocusReason { REASON_NONE = 0, REASON_PRESSED, REASON_TAB, REASON_WINDOW, REASON_MENU, REASON_HIDDEN };
   bool setFocused(Widget* widget, FocusReason reason = REASON_NONE);
   void setPressed(Widget* widget);
+  void setWindowXmlClass(const char* xmlcls);
 
   void showMenu(Widget* menu);
   void closeMenus(const Widget* parent_menu = NULL, bool closegroup = false);
@@ -274,6 +277,7 @@ public:
   Timer* longPressTimer = NULL;
   Rect closedWindowBounds;
   std::vector<Widget*> filterWidgets;
+  std::string windowXmlClass;  // class added to every window for theming, etc.
 };
 
 bool isLongPressOrRightClick(SDL_Event* event);

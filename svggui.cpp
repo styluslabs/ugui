@@ -449,6 +449,13 @@ void Window::setTitle(const char* title)
     SDL_SetWindowTitle(sdlWindow, title);
 }
 
+void Window::setWindowXmlClass(const char* xmlcls)
+{
+  if(xmlcls == windowXmlClass) return;
+  node->setXmlClass(addWord(removeWord(node->xmlClass(), windowXmlClass), xmlcls).c_str());
+  windowXmlClass = xmlcls;
+}
+
 bool SvgGui::debugLayout = false;
 bool SvgGui::debugDirty = false;
 
@@ -943,6 +950,7 @@ void SvgGui::showWindow(Window* win, Window* parent, bool showModal, Uint32 flag
   win->parentWindow = parent;
   win->svgGui = this;
   windows.push_back(win);
+  win->setWindowXmlClass(windowXmlClass.c_str());
 
   if(showModal) {
     // clear pressedWidget and hoveredWidget
@@ -998,6 +1006,13 @@ void SvgGui::closeWindow(Window* win)
 void SvgGui::showModal(Window* modal, Window* parent)
 {
   showWindow(modal, parent, true);
+}
+
+void SvgGui::setWindowXmlClass(const char* xmlcls)
+{
+  for(Window* win : windows)
+    win->setWindowXmlClass(xmlcls);
+  windowXmlClass = xmlcls;
 }
 
 void SvgGui::setImeText(const char* text, int selStart, int selEnd)

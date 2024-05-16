@@ -7,17 +7,11 @@
 //static const char* styleCSS = NULL;
 static std::unique_ptr<SvgDocument> widgetDoc;
 static std::shared_ptr<SvgCssStylesheet> widgetStyle;
-static const char* windowClass = NULL;
 
 void setGuiResources(SvgDocument* svg, SvgCssStylesheet* css)
 {
   widgetDoc.reset(svg);
   widgetStyle.reset(css);
-}
-
-void setWindowXmlClass(const char* winclass)
-{
-  windowClass = winclass;
 }
 
 // assumes svg string contains a single top-level node
@@ -1401,13 +1395,9 @@ Button* Dialog::addButton(const char* title, const std::function<void()>& callba
 SvgDocument* setupWindowNode(SvgDocument* doc)
 {
   doc->setAttribute("box-anchor", "fill");
-  if(windowClass && windowClass[0])
-    doc->addClass(windowClass);
-
   SvgDefs* defs = static_cast<SvgDefs*>(widgetDoc->selectFirst("defs"));
   if(defs)
     doc->addChild(defs->clone(), doc->firstChild());
-
   if(!doc->stylesheet())
     doc->setStylesheet(widgetStyle);
   doc->restyle();

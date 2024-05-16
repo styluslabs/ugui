@@ -315,7 +315,6 @@ public:
 };
 
 void setGuiResources(SvgDocument* svg, SvgCssStylesheet* css);
-void setWindowXmlClass(const char* winclass);
 SvgNode* widgetNode(const char* sel);
 SvgNode* loadSVGFragment(const char* svg);
 SvgDocument* createDialogNode(bool reversebtns = PLATFORM_MOBILE);
