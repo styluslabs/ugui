@@ -1150,12 +1150,11 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     }
     if(event->type == SDL_FINGERUP || event->type == SvgGui::OUTSIDE_PRESSED) {
       if(event->type == SDL_FINGERUP && tappedWidget) {  //gui->fingerClicks > 0) {
-        cleanup(gui, event);
-        setOverscroll(0);
         // cancel any panning
         scroll(initialPos - prevPos);
         flingV = Point(0, 0);
-        gui->removeTimer(fadeTimer);
+        cleanup(gui, event);
+        setOverscroll(0);
         yHandle->node->setAttr<float>("opacity", 0.0);
         gui->pressedWidget = NULL;
         gui->sendEvent(window(), widget, &gui->pressEvent);
@@ -1257,6 +1256,7 @@ bool ScrollWidget::forwardEvent(SvgGui* gui, SDL_Event* event, Point pos)
 void ScrollWidget::cleanup(SvgGui* gui, SDL_Event* event)
 {
   testPassThru = false;
+  fadeTimer = NULL;
   gui->removeTimers(this);
   if(enterEventSent) {
     SDL_Event enterleave = {0};
