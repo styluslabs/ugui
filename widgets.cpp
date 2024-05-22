@@ -6,12 +6,12 @@
 //static const char* widgetSVG = NULL;
 //static const char* styleCSS = NULL;
 static std::unique_ptr<SvgDocument> widgetDoc;
-static std::shared_ptr<SvgCssStylesheet> widgetStyle;
+//static std::shared_ptr<SvgCssStylesheet> widgetStyle;
 
-void setGuiResources(SvgDocument* svg, SvgCssStylesheet* css)
+void setGuiResources(SvgDocument* svg)  //, SvgCssStylesheet* css)
 {
   widgetDoc.reset(svg);
-  widgetStyle.reset(css);
+  //widgetStyle.reset(css);
 }
 
 // assumes svg string contains a single top-level node
@@ -91,6 +91,11 @@ SvgText* createTextNode(const char* text)
   return node;
 }
 
+TextBox* createTextBox(const char* text)
+{
+  return new TextBox(createTextNode(text));
+}
+
 // createTitledRow("Name", NULL, widget) to get gap between title and widget
 Widget* createTitledRow(const char* title, Widget* control1, Widget* control2)
 {
@@ -106,12 +111,12 @@ Widget* createTitledRow(const char* title, Widget* control1, Widget* control2)
   return row;
 }
 
-Widget* createHRule(int height, const char* margin)
+Widget* createHRule(real height, const char* margin, const char* cls)
 {
   SvgRect* hrule = new SvgRect(Rect::wh(20, height));
   hrule->setAttribute("box-anchor", "hfill");
-  hrule->addClass("hrule");
-  if(margin)
+  hrule->addClass(cls);
+  if(margin && margin[0])
     hrule->setAttribute("margin", margin);
   return new Widget(hrule);
 }
@@ -176,13 +181,15 @@ Button::Button(SvgNode* n) : Widget(n), mMenu(NULL), m_checked(false)
         node->removeClass("pressed");
     }
     else if(event->type == SDL_FINGERDOWN && event->tfinger.fingerId == SDL_BUTTON_LMASK) {
-      gui->closeMenus(this);  // close sibling menu if any
       if(mMenu && gui->lastClosedMenu != mMenu) {
+        gui->closeMenus(this);  // close sibling menu if any
         gui->showMenu(mMenu);
         gui->setPressed(mMenu);
       }
-      else
+      else {
+        gui->closeMenus(this);
         gui->setPressed(this);
+      }
       // do this after closeMenus, which might clear "pressed"
       node->setXmlClass(addWord(removeWord(node->xmlClass(), "hovered"), "pressed").c_str());
       if(onPressed)
@@ -731,8 +738,8 @@ void ComboBox::updateFromText(const char* s)
 //  and {"a", "b", ... } intializer lists work for std::string!
 ComboBox* createComboBox(const std::vector<std::string>& items)
 {
-  SvgG* comboNode = static_cast<SvgG*>(widgetNode("#combobox"));
-  static_cast<SvgG*>(comboNode->selectFirst(".combo_text"))->addChild(widgetNode("#textbox"));
+  SvgNode* comboNode = widgetNode("#combobox");
+  comboNode->selectFirst(".combo_text")->asContainerNode()->addChild(widgetNode("#textbox"));
 
   ComboBox* widget = new ComboBox(comboNode, items);
   setupFocusable(widget);  //widget->isFocusable = true;
@@ -1040,7 +1047,9 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
           enterleave.type = SvgGui::ENTER;
           enterleave.user.timestamp = gui->pressEvent.common.timestamp;
           enterleave.user.data1 = &gui->pressEvent;
+          isPressedGroupContainer = true;
           gui->sendEvent(window(), tappedWidget, &enterleave);
+          isPressedGroupContainer = false;
           enterEventSent = true;
         }
         return 0;
@@ -1127,7 +1136,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         testPassThru = false;
         Widget* backupFocused = window()->focusedWidget;
         auto backupClosedMenu = gui->lastClosedMenu;
-        if(gui->sendEvent(window(), tappedWidget, &gui->pressEvent) && gui->pressedWidget != this) {
+        gui->pressedWidget = NULL;
+        if(gui->sendEvent(window(), tappedWidget, &gui->pressEvent) && gui->pressedWidget) {
           Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
           real dx = std::abs(dr.x), dy = std::abs(dr.y);
           if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dx >= 2*dy)
@@ -1140,8 +1150,8 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
           }
           // drag event not accepted
           gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, NULL);  //this);
-          gui->pressedWidget = this;
         }
+        gui->pressedWidget = this;
         if(window()->focusedWidget != backupFocused)
           gui->setFocused(this);
         gui->lastClosedMenu = backupClosedMenu;
@@ -1263,7 +1273,9 @@ void ScrollWidget::cleanup(SvgGui* gui, SDL_Event* event)
     enterleave.type = SvgGui::LEAVE;
     enterleave.user.timestamp = event->common.timestamp;
     enterleave.user.data1 = event;
+    isPressedGroupContainer = true;
     gui->sendEvent(window(), tappedWidget, &enterleave);
+    isPressedGroupContainer = false;
     enterEventSent = false;
   }
   tappedWidget = NULL;
@@ -1398,9 +1410,9 @@ SvgDocument* setupWindowNode(SvgDocument* doc)
   SvgDefs* defs = static_cast<SvgDefs*>(widgetDoc->selectFirst("defs"));
   if(defs)
     doc->addChild(defs->clone(), doc->firstChild());
-  if(!doc->stylesheet())
-    doc->setStylesheet(widgetStyle);
-  doc->restyle();
+  //if(!doc->stylesheet())
+  //  doc->setStylesheet(widgetStyle);
+  //doc->restyle();
   return doc;
 }
 

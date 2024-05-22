@@ -202,8 +202,8 @@ void Widget::addWidget(Widget* child)
 // Feel free to remove this after verifying no performance issues
 void Widget::onAttrChange(const char* name)
 {
-  static const char* layoutAttrs[] = {"left", "top", "right", "bottom", "layout",
-      "flex-direction", "flex-wrap", "justify-content", "box-anchor", "flex-break", "box-shadow"};
+  static const char* layoutAttrs[] = {"left", "top", "right", "bottom", "box-anchor", "layout",
+      "flex-direction", "flex-wrap", "justify-content", "flex-break", "box-shadow", "border-radius"};
   StringRef nameref(name);
   if(layoutVarsValid && (nameref.startsWith("margin") || indexOfStr(nameref, layoutAttrs) >= 0)) {
     layoutVarsValid = false;
@@ -216,7 +216,7 @@ void Widget::updateLayoutVars()
   StringRef marginstr = node->getStringAttr("margin");
   if(!marginstr.isEmpty()) {
     std::vector<real> margin;
-    parseNumbersList(marginstr,  margin);
+    parseNumbersList(marginstr, margin);
     if(margin.size() == 0)
       margin = {0, 0, 0, 0};  // top right bottom left
     else if(margin.size() == 1)  // all equal
@@ -284,15 +284,18 @@ void Widget::updateLayoutVars()
   if(StringRef(node->getStringAttr("flex-break", "")) == "before")
     layBehave |= LAY_BREAK;
 
-  layoutVarsValid = true;
-}
-
-void AbsPosWidget::updateLayoutVars()
-{
-  offsetLeft = parseLength(node->getStringAttr("left"), NaN);
-  offsetTop = parseLength(node->getStringAttr("top"), NaN);
-  offsetRight = parseLength(node->getStringAttr("right"), NaN);
-  offsetBottom = parseLength(node->getStringAttr("bottom"), NaN);
+  if(node->type() == SvgNode::RECT) {
+    SvgRect* rnode = static_cast<SvgRect*>(node);
+    StringRef radiusstr = node->getStringAttr("border-radius");
+    std::vector<real> radii;
+    parseNumbersList(radiusstr, radii);
+    if(radii.size() == 1)  // all equal
+      rnode->setCornerRadii(radii[0], radii[0], radii[0], radii[0]);
+    else if(radii.size() == 4)  // top-left | top-right | bottom-right | bottom-left
+      rnode->setCornerRadii(radii[0], radii[1], radii[2], radii[3]);
+    else
+      rnode->setCornerRadii(0, 0, 0, 0);
+  }
 
   shadowBlur = 0;
   shadowSpread = 0;
@@ -319,6 +322,16 @@ void AbsPosWidget::updateLayoutVars()
     shadowColor = parseColor(shd, Color::BLACK);
     //if(std::isnan(dx) || std::isnan(dy) || std::isnan(blur) || std::isnan(spread))
   }
+
+  layoutVarsValid = true;
+}
+
+void AbsPosWidget::updateLayoutVars()
+{
+  offsetLeft = parseLength(node->getStringAttr("left"), NaN);
+  offsetTop = parseLength(node->getStringAttr("top"), NaN);
+  offsetRight = parseLength(node->getStringAttr("right"), NaN);
+  offsetBottom = parseLength(node->getStringAttr("bottom"), NaN);
 
   Widget::updateLayoutVars();
 }
@@ -369,6 +382,29 @@ void Widget::setLayoutTransform(const Transform2D& tf)
   }
 }
 
+static void drawShadow(SvgPainter* svgp, const Widget* w)
+{
+  Rect bounds = w->node->bounds();
+  //bounds.translate(w->window()->winBounds().origin());
+  if(!bounds.intersects(svgp->dirtyRect)) return;
+  Painter* p = svgp->p;
+  real dx = w->shadowDx, dy = w->shadowDy;
+  bounds.pad(w->shadowSpread);
+  Rect shdbnds = bounds.toSize().pad(0.5*w->shadowBlur + 1).translate(dx, dy);
+  Color c = w->shadowColor;
+  p->save();
+  p->setTransform(svgp->initialTransform);
+  p->translate(bounds.origin());  // - w->m_layoutTransform.map(Point(0,0)));
+  Gradient grad = Gradient::box(dx, dy, bounds.width(), bounds.height(), 0, w->shadowBlur);
+  grad.coordMode = Gradient::userSpaceOnUseMode;
+  //grad.setObjectBBox(Rect::ltwh(d, props.height, props.width, d));
+  grad.addStop(0, c);
+  grad.addStop(1, c.setAlphaF(0));
+  p->setFillBrush(&grad);
+  p->drawRect(shdbnds);
+  p->restore();
+}
+
 void Widget::applyStyle(SvgPainter* svgp) const
 {
   // `svgp->p->transform(m_layoutTransform)` works w/ the corresponding code using totalTransform() in
@@ -389,6 +425,10 @@ void Widget::applyStyle(SvgPainter* svgp) const
   tf.m[4] += m_layoutTransform.xoffset() * svgp->initialTransform.xscale();
   tf.m[5] += m_layoutTransform.yoffset() * svgp->initialTransform.yscale();
   svgp->p->setTransform(tf);
+
+  // valid dirty rect indicates rendering (as opposed to bounds calculation)
+  if(svgp->dirtyRect.isValid() && hasShadow())
+    drawShadow(svgp, this);
 }
 
 // note we use rbegin/rend, so handlers added later have priority!  Add flag to addHandler to control this?
@@ -951,6 +991,10 @@ void SvgGui::showWindow(Window* win, Window* parent, bool showModal, Uint32 flag
   win->svgGui = this;
   windows.push_back(win);
   win->setWindowXmlClass(windowXmlClass.c_str());
+  if(win->documentNode()->stylesheet() != windowStylesheet.get()) {
+    win->documentNode()->setStylesheet(windowStylesheet);
+    win->documentNode()->restyle();
+  }
 
   if(showModal) {
     // clear pressedWidget and hoveredWidget
@@ -1013,6 +1057,15 @@ void SvgGui::setWindowXmlClass(const char* xmlcls)
   for(Window* win : windows)
     win->setWindowXmlClass(xmlcls);
   windowXmlClass = xmlcls;
+}
+
+void SvgGui::setWindowStylesheet(std::unique_ptr<SvgCssStylesheet> ss)
+{
+  windowStylesheet = std::move(ss);
+  for(Window* win : windows) {
+    win->documentNode()->setStylesheet(windowStylesheet);
+    win->documentNode()->restyle();
+  }
 }
 
 void SvgGui::setImeText(const char* text, int selStart, int selEnd)
@@ -1660,8 +1713,12 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
   if(pressedWidget) {
     if(widget && widget->isDescendantOf(pressedWidget)) {
       bool accepted = false;
-      while(widget && !(accepted = widget->sdlEvent(this, event)) && widget != pressedWidget)
-        widget = widget->parent();
+      if(pressedWidget->isPressedGroupContainer) {
+        while(widget && !(accepted = widget->sdlEvent(this, event)) && widget != pressedWidget)
+          widget = widget->parent();
+      }
+      else
+        accepted = pressedWidget->sdlEvent(this, event);
       if(event->type == SDL_FINGERUP)
         pressedWidget = NULL;
       return accepted;
@@ -1688,25 +1745,6 @@ bool SvgGui::sendEvent(Window* win, Widget* widget, SDL_Event* event)
     widget = widget->parent();
 
   return widget != NULL;
-}
-
-
-static void drawShadow(Painter* p, AbsPosWidget* w)
-{
-  real dx = w->shadowDx, dy = w->shadowDy;
-  Rect bounds = Rect(w->node->bounds()).pad(w->shadowSpread);
-  Rect shdbnds = bounds.toSize().pad(0.5*w->shadowBlur + 1).translate(dx, dy);
-  Color c = w->shadowColor;
-  p->save();
-  p->translate(bounds.origin());
-  Gradient grad = Gradient::box(dx, dy, bounds.width(), bounds.height(), 0, w->shadowBlur);
-  grad.coordMode = Gradient::userSpaceOnUseMode;
-  //grad.setObjectBBox(Rect::ltwh(d, props.height, props.width, d));
-  grad.addStop(0, c);
-  grad.addStop(1, c.setAlphaF(0));
-  p->setFillBrush(&grad);
-  p->drawRect(shdbnds);
-  p->restore();
 }
 
 // We've now failed twice trying to use Windows for abs pos nodes; the 2nd attempt (15 Sept 2019) was on the
@@ -1838,12 +1876,12 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
     Rect winclip = Rect(cliprect).translate(-origin);
 
     painter->translate(origin);
-    if(win->hasShadow() && win->shadowBounds(win->winBounds().toSize()).intersects(winclip))
-      drawShadow(painter, win);
+    //if(win->hasShadow() && win->shadowBounds(win->winBounds().toSize()).intersects(winclip))
+    //  drawShadow(painter, win);
     SvgPainter(painter).drawNode(win->node, winclip);
     for(AbsPosWidget* widget : win->absPosNodes) {
-      if(widget->hasShadow() && widget->shadowBounds(widget->node->bounds()).intersects(winclip))
-        drawShadow(painter, widget);
+      //if(widget->hasShadow() && widget->shadowBounds(widget->node->bounds()).intersects(winclip))
+      //  drawShadow(painter, widget);
       SvgPainter(painter).drawNode(widget->node, winclip);
     }
 

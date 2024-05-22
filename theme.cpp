@@ -276,6 +276,12 @@ static const char* defaultWidgetSVG = R"#(
     </g>
   </g>
 
+  <g id="textedit" class="inputbox textbox" layout="box">
+    <!-- invisible rect to set minimum width -->
+    <rect class="min-width-rect" width="150" height="36" fill="none"/>
+    <rect class="inputbox-bg" box-anchor="fill" width="20" height="20"/>
+  </g>
+
   <!-- non-editable textbox for combobox and spinbox -->
   <g id="textbox" class="textbox" box-anchor="fill" layout="box">
     <text box-anchor="left" margin="3 6"></text>

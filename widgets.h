@@ -314,7 +314,7 @@ public:
   Rect mBounds;
 };
 
-void setGuiResources(SvgDocument* svg, SvgCssStylesheet* css);
+void setGuiResources(SvgDocument* svg);  //, SvgCssStylesheet* css);
 SvgNode* widgetNode(const char* sel);
 SvgNode* loadSVGFragment(const char* svg);
 SvgDocument* createDialogNode(bool reversebtns = PLATFORM_MOBILE);
@@ -337,13 +337,14 @@ SpinBox* createSpinBox(
 Slider* createSlider();
 Dialog* createDialog(const char* title, const SvgNode* icon = NULL);
 SvgText* createTextNode(const char* text);
+TextBox* createTextBox(const char* text);
 Widget* createStretch();
 Widget* createRow(std::initializer_list<Widget*> contents = {},
     const char* margin = "", const char* justify = "", const char* boxanchor = "hfill");
 Widget* createColumn(std::initializer_list<Widget*> contents = {},
     const char* margin = "", const char* justify = "",  const char* boxanchor = "vfill");
 Widget* createTitledRow(const char* title, Widget* control1, Widget* control2 = NULL);
-Widget* createHRule(int height = 2, const char* margin = NULL);
+Widget* createHRule(real height = 2, const char* margin = NULL, const char* cls = "hrule");
 Widget* createFillRect(bool hasfill = true);
 void setMinWidth(Widget* widget, real w, const char* sel = ".min-width-rect");
 void setupTooltip(Widget* target, const char* tiptext, int align=-1);

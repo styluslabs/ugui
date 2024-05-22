@@ -685,19 +685,8 @@ SvgNode* textEditInnerNode()
 
 TextEdit* createTextEdit(int width)
 {
-  static const char* textEditSVG = R"#(
-    <g id="textedit" class="inputbox textbox" layout="box">
-      <!-- invisible rect to set minimum width -->
-      <rect class="min-width-rect" width="150" height="36" fill="none"/>
-      <rect class="inputbox-bg" box-anchor="fill" width="20" height="20"/>
-    </g>
-  )#";
-  static std::unique_ptr<SvgNode> proto;
-  if(!proto)
-    proto.reset(loadSVGFragment(textEditSVG));
-
-  SvgG* textEditNode = static_cast<SvgG*>(proto->clone());
-  textEditNode->addChild(textEditInnerNode());
+  SvgNode* textEditNode = widgetNode("#textedit");
+  textEditNode->asContainerNode()->addChild(textEditInnerNode());
   if(width < 0)
     textEditNode->setAttribute("box-anchor", "hfill");
   else if(width > 0) {

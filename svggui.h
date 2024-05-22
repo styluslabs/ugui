@@ -51,6 +51,7 @@ public:
   enum WidgetClass_t { WidgetClass, AbsPosWidgetClass, WindowClass };
   virtual WidgetClass_t widgetClass() const { return WidgetClass; }
   bool isDescendantOf(Widget* parent) const;
+  bool isEmpty() const { return !node->asContainerNode() || node->asContainerNode()->children().empty(); }
 
   // this might be overkill - could just use void* for user data and require user handle deletion
   // ... user may not want Widget to delete the userdata!
@@ -94,6 +95,11 @@ public:
   bool isPressedGroupContainer = false;
   bool isFocusable = false;
   std::shared_ptr<void> m_userData;
+
+  real shadowDx = 0, shadowDy = 0, shadowBlur = 0, shadowSpread = 0;
+  Color shadowColor;
+  Rect shadowBounds(Rect b) const { return b.pad(shadowSpread).pad(0.5*shadowBlur + 1).translate(shadowDx, shadowDy); }
+  bool hasShadow() const { return shadowSpread > 0 || shadowBlur > 0; }
 };
 
 class AbsPosWidget : public Widget
@@ -104,11 +110,6 @@ public:
   SvgLength offsetTop;
   SvgLength offsetRight;
   SvgLength offsetBottom;
-
-  real shadowDx = 0, shadowDy = 0, shadowBlur = 0, shadowSpread = 0;
-  Color shadowColor;
-  Rect shadowBounds(Rect b) const { return b.pad(shadowSpread).pad(0.5*shadowBlur + 1).translate(shadowDx, shadowDy); }
-  bool hasShadow() const { return shadowSpread > 0 || shadowBlur > 0; }
 
   virtual Point calcOffset(const Rect& parentbbox) const;  // allow overriding for more complex positioning
   void updateLayoutVars() override;
@@ -177,6 +178,7 @@ public:
   bool setFocused(Widget* widget, FocusReason reason = REASON_NONE);
   void setPressed(Widget* widget);
   void setWindowXmlClass(const char* xmlcls);
+  void setWindowStylesheet(std::unique_ptr<SvgCssStylesheet> ss);
 
   void showMenu(Widget* menu);
   void closeMenus(const Widget* parent_menu = NULL, bool closegroup = false);
@@ -278,6 +280,7 @@ public:
   Rect closedWindowBounds;
   std::vector<Widget*> filterWidgets;
   std::string windowXmlClass;  // class added to every window for theming, etc.
+  std::shared_ptr<SvgCssStylesheet> windowStylesheet;
 };
 
 bool isLongPressOrRightClick(SDL_Event* event);
