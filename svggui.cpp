@@ -105,7 +105,8 @@ void Widget::setVisible(bool visible)
       auto it = std::find(absPosNodes.begin(), absPosNodes.end(), w);
       if(!visible && it != absPosNodes.end()) {
         absPosNodes.erase(it);
-        Rect r = w->shadowBounds(node->m_renderedBounds).rectUnion(node->m_renderedBounds);
+        Rect r = node->m_renderedBounds;
+        if(w->m_shadow) r.rectUnion(w->m_shadow->bounds(node->m_renderedBounds));
         win->gui()->closedWindowBounds.rectUnion(r.translate(win->winBounds().origin()));
       }
       else if(visible && it == absPosNodes.end())
@@ -284,11 +285,34 @@ void Widget::updateLayoutVars()
   if(StringRef(node->getStringAttr("flex-break", "")) == "before")
     layBehave |= LAY_BREAK;
 
+  m_shadow.reset();
+  const char* shadow = node->getStringAttr("box-shadow");
+  if(shadow) {
+    m_shadow = std::make_unique<BoxShadow>();
+    StringRef shd(shadow);
+    m_shadow->dx = parseLength(shd, SvgLength(0)).value;
+    shd.advance(shd.find(" ")).trimL();
+    m_shadow->dy = parseLength(shd, SvgLength(0)).value;
+    shd.advance(shd.find(" ")).trimL();
+    if(!shd.isEmpty() && isDigit(shd[0])) {
+      m_shadow->blur = parseLength(shd, SvgLength(0)).value;  // nanovg "feather"
+      shd.advance(shd.find(" ")).trimL();
+    }
+    if(!shd.isEmpty() && (isDigit(shd[0]) || shd[0] == '-')) {  // spread can be negative
+      m_shadow->spread = parseLength(shd, SvgLength(0)).value;  // padding for rect
+      shd.advance(shd.find(" ")).trimL();
+    }
+    if(shd.startsWith("inset"))
+      shd.advance(5).trimL();
+    m_shadow->color = parseColor(shd, Color::BLACK);
+    //if(std::isnan(dx) || std::isnan(dy) || std::isnan(blur) || std::isnan(spread))
+  }
+
+  StringRef radiusstr = node->getStringAttr("border-radius");
+  std::vector<real> radii;
+  parseNumbersList(radiusstr, radii);
   if(node->type() == SvgNode::RECT) {
     SvgRect* rnode = static_cast<SvgRect*>(node);
-    StringRef radiusstr = node->getStringAttr("border-radius");
-    std::vector<real> radii;
-    parseNumbersList(radiusstr, radii);
     if(radii.size() == 1)  // all equal
       rnode->setCornerRadii(radii[0], radii[0], radii[0], radii[0]);
     else if(radii.size() == 4)  // top-left | top-right | bottom-right | bottom-left
@@ -296,32 +320,8 @@ void Widget::updateLayoutVars()
     else
       rnode->setCornerRadii(0, 0, 0, 0);
   }
-
-  shadowBlur = 0;
-  shadowSpread = 0;
-  shadowDx = 0;
-  shadowDy = 0;
-  shadowColor = Color::INVALID_COLOR;
-  const char* shadow = node->getStringAttr("box-shadow");
-  if(shadow) {
-    StringRef shd(shadow);
-    shadowDx = parseLength(shd, SvgLength(0)).value;
-    shd.advance(shd.find(" ")).trimL();
-    shadowDy = parseLength(shd, SvgLength(0)).value;
-    shd.advance(shd.find(" ")).trimL();
-    if(!shd.isEmpty() && isDigit(shd[0])) {
-      shadowBlur = parseLength(shd, SvgLength(0)).value;  // nanovg "feather"
-      shd.advance(shd.find(" ")).trimL();
-    }
-    if(!shd.isEmpty() && (isDigit(shd[0]) || shd[0] == '-')) {  // spread can be negative
-      shadowSpread = parseLength(shd, SvgLength(0)).value;  // padding for rect
-      shd.advance(shd.find(" ")).trimL();
-    }
-    if(shd.startsWith("inset"))
-      shd.advance(5).trimL();
-    shadowColor = parseColor(shd, Color::BLACK);
-    //if(std::isnan(dx) || std::isnan(dy) || std::isnan(blur) || std::isnan(spread))
-  }
+  if(m_shadow)
+    m_shadow->radius = radii.empty() ? 0 : radii[0];
 
   layoutVarsValid = true;
 }
@@ -388,18 +388,17 @@ static void drawShadow(SvgPainter* svgp, const Widget* w)
   //bounds.translate(w->window()->winBounds().origin());
   if(!bounds.intersects(svgp->dirtyRect)) return;
   Painter* p = svgp->p;
-  real dx = w->shadowDx, dy = w->shadowDy;
-  bounds.pad(w->shadowSpread);
-  Rect shdbnds = bounds.toSize().pad(0.5*w->shadowBlur + 1).translate(dx, dy);
-  Color c = w->shadowColor;
+  Widget::BoxShadow* shd = w->m_shadow.get();
+  bounds.pad(shd->spread);
+  Rect shdbnds = bounds.toSize().pad(0.5*shd->blur + 1).translate(shd->dx, shd->dy);
   p->save();
   p->setTransform(svgp->initialTransform);
   p->translate(bounds.origin());  // - w->m_layoutTransform.map(Point(0,0)));
-  Gradient grad = Gradient::box(dx, dy, bounds.width(), bounds.height(), 0, w->shadowBlur);
+  Gradient grad = Gradient::box(shd->dx, shd->dy, bounds.width(), bounds.height(), shd->radius, shd->blur);
   grad.coordMode = Gradient::userSpaceOnUseMode;
   //grad.setObjectBBox(Rect::ltwh(d, props.height, props.width, d));
-  grad.addStop(0, c);
-  grad.addStop(1, c.setAlphaF(0));
+  grad.addStop(0, shd->color);
+  grad.addStop(1, Color(shd->color).setAlphaF(0));
   p->setFillBrush(&grad);
   p->drawRect(shdbnds);
   p->restore();
@@ -427,7 +426,7 @@ void Widget::applyStyle(SvgPainter* svgp) const
   svgp->p->setTransform(tf);
 
   // valid dirty rect indicates rendering (as opposed to bounds calculation)
-  if(svgp->dirtyRect.isValid() && hasShadow())
+  if(svgp->dirtyRect.isValid() && m_shadow)
     drawShadow(svgp, this);
 }
 
@@ -1778,9 +1777,9 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
     Rect windirty = SvgPainter::calcDirtyRect(win->node);
     Rect laydirty = layoutDirtyRoot && debugDirty ? layoutDirtyRoot->node->bounds() : Rect();
     Point origin = win->winBounds().origin();
-    if(win->node->m_dirty > SvgNode::CHILD_DIRTY && win->hasShadow()) {
-      windirty.rectUnion(win->shadowBounds(win->node->bounds()));
-      windirty.rectUnion(win->shadowBounds(win->node->m_renderedBounds));
+    if(win->node->m_dirty > SvgNode::CHILD_DIRTY && win->m_shadow) {
+      windirty.rectUnion(win->m_shadow->bounds(win->node->bounds()));
+      windirty.rectUnion(win->m_shadow->bounds(win->node->m_renderedBounds));
     }
 
     for(AbsPosWidget* w : win->absPosNodes) {
@@ -1807,9 +1806,9 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
       windirty.rectUnion(SvgPainter::calcDirtyRect(w->node));
       laydirty.rectUnion(layoutDirtyRoot && debugDirty ? layoutDirtyRoot->node->bounds() : Rect());
 
-      if(w->node->m_dirty > SvgNode::CHILD_DIRTY && w->hasShadow()) {
-        windirty.rectUnion(w->shadowBounds(w->node->bounds()));
-        windirty.rectUnion(w->shadowBounds(w->node->m_renderedBounds));
+      if(w->node->m_dirty > SvgNode::CHILD_DIRTY && w->m_shadow) {
+        windirty.rectUnion(w->m_shadow->bounds(w->node->bounds()));
+        windirty.rectUnion(w->m_shadow->bounds(w->node->m_renderedBounds));
       }
     }
 

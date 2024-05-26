@@ -42,44 +42,37 @@ SvgNode* widgetNode(const char* sel)
   return cloned;
 }
 
-static SvgG* createRowNode(const char* justify = "", const char* margin = "", const char* boxanchor = "hfill")
+static SvgG* createLayoutNode(const char* cls, const char* boxanchor,
+    const char* layout, const char* flexdir = "", const char* justify = "", const char* margin = "")
 {
   SvgG* row = new SvgG;
-  row->addClass("row-layout");
-  if(boxanchor && boxanchor[0])
-    row->setAttribute("box-anchor", boxanchor);
-  row->setAttribute("layout", "flex");
-  row->setAttribute("flex-direction", "row");
-  if(justify && justify[0])
-    row->setAttribute("justify-content", justify);
-  if(margin && margin[0])
-    row->setAttribute("margin", margin);
+  if(cls && cls[0]) row->addClass(cls);
+  if(boxanchor && boxanchor[0]) row->setAttribute("box-anchor", boxanchor);
+  if(layout && layout[0]) row->setAttribute("layout", layout);
+  if(flexdir && flexdir[0]) row->setAttribute("flex-direction", flexdir);
+  if(justify && justify[0]) row->setAttribute("justify-content", justify);
+  if(margin && margin[0]) row->setAttribute("margin", margin);
   return row;
 }
 
 Widget* createRow(std::initializer_list<Widget*> contents, const char* margin, const char* justify, const char* boxanchor)
 {
-  Widget* widget = new Widget(createRowNode(justify, margin, boxanchor));
-  for(Widget* w : contents)
-    widget->addWidget(w);
+  Widget* widget = new Widget(createLayoutNode("row-layout", boxanchor, "flex", "row", justify, margin));
+  for(Widget* w : contents) widget->addWidget(w);
   return widget;
 }
 
 Widget* createColumn(std::initializer_list<Widget*> contents, const char* margin, const char* justify, const char* boxanchor)
 {
-  SvgG* col = new SvgG;
-  col->addClass("col-layout");
-  if(boxanchor && boxanchor[0])
-    col->setAttribute("box-anchor", boxanchor);
-  col->setAttribute("layout", "flex");
-  col->setAttribute("flex-direction", "column");
-  if(justify && justify[0])
-    col->setAttribute("justify-content", justify);
-  if(margin && margin[0])
-    col->setAttribute("margin", margin);
-  Widget* widget = new Widget(col);
-  for(Widget* w : contents)
-    widget->addWidget(w);
+  Widget* widget = new Widget(createLayoutNode("col-layout", boxanchor, "flex", "column", justify, margin));
+  for(Widget* w : contents) widget->addWidget(w);
+  return widget;
+}
+
+Widget* createBoxLayout(std::initializer_list<Widget*> contents, const char* margin, const char* boxanchor)
+{
+  Widget* widget = new Widget(createLayoutNode("box-layout", boxanchor, "box", "", "", margin));
+  for(Widget* w : contents) widget->addWidget(w);
   return widget;
 }
 
@@ -415,6 +408,8 @@ void Menu::addSeparator()
   addWidget(new Widget(widgetNode("#menu-separator")));
 }
 
+void Menu::addItem(Button* btn) { setupMenuItem(btn);  addWidget(btn); }
+
 // this breaks the idea of Menu class defining only behavior, but so does Menu::addAction and addSubmenu!
 // - maybe change to standalone addMenuItem() (and addMenuAction()?)
 // - or have addWidget() return its argument for chaining!
@@ -606,13 +601,11 @@ CheckBox* createCheckBox(const char* title, bool checked)
 {
   SvgNode* cbnode = widgetNode("#checkbox");
   if(title && title[0]) {
-    SvgG* row = createRowNode();
-    row->removeAttr("box-anchor");
+    SvgG* row = createLayoutNode("checkbox", "", "flex", "row");
     SvgText* titlenode = createTextNode(title);
     titlenode->setAttribute("margin", "4 2");
     row->addChild(cbnode);
     row->addChild(titlenode);
-    row->addClass("checkbox");
     cbnode->removeClass("checkbox");
     cbnode = row;
   }
@@ -1118,10 +1111,12 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       return gui->sendEvent(window(), this, event);
     }
     if(isLongPressOrRightClick(event)) {
+      isPressedGroupContainer = true;
       if(gui->sendEvent(window(), widget, event)) {  //&& gui->pressedWidget != this) {
         cleanup(gui, event);
         setOverscroll(0);
       }
+      isPressedGroupContainer = false;
       return true;
     }
     // allow use of modifier key to pass wheel event to underlying widget

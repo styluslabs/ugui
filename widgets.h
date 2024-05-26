@@ -69,14 +69,6 @@ private:
   bool m_checked;
 };
 
-/*class MenuItem : public Button
-{
-public:
-  MenuItem(SvgNode* n);
-  //void setMenu(Menu* m);
-};*/
-void setupMenuItem(Button* btn);
-
 class Menu : public AbsPosWidget
 {
 public:
@@ -86,7 +78,7 @@ public:
 
   Menu(SvgNode* n, int align);
 
-  void addItem(Button* btn) { setupMenuItem(btn);  addWidget(btn); }
+  void addItem(Button* btn);
   Button* addItem(const char* name, const SvgNode* icon, const std::function<void()>& callback);
   Button* addItem(const char* name, const std::function<void()>& callback) { return addItem(name, NULL, callback); }
   Button* addAction(Action* action);
@@ -343,9 +335,12 @@ Widget* createRow(std::initializer_list<Widget*> contents = {},
     const char* margin = "", const char* justify = "", const char* boxanchor = "hfill");
 Widget* createColumn(std::initializer_list<Widget*> contents = {},
     const char* margin = "", const char* justify = "",  const char* boxanchor = "vfill");
+Widget* createBoxLayout(std::initializer_list<Widget*> contents = {},
+    const char* margin = "", const char* boxanchor = "fill");
 Widget* createTitledRow(const char* title, Widget* control1, Widget* control2 = NULL);
 Widget* createHRule(real height = 2, const char* margin = NULL, const char* cls = "hrule");
 Widget* createFillRect(bool hasfill = true);
 void setMinWidth(Widget* widget, real w, const char* sel = ".min-width-rect");
 void setupTooltip(Widget* target, const char* tiptext, int align=-1);
 void setupFocusable(Widget* widget);
+void setupMenuItem(Button* btn);

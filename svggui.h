@@ -19,7 +19,7 @@ class Widget : public SvgNodeExtension
 {
 public:
   Widget(SvgNode* n);
-  Widget* clone() const override { ASSERT(0 && "Widgets cannot be cloned"); return new Widget(*this); }
+  Widget* clone() const override { ASSERT(0 && "Widgets cannot be cloned"); return NULL; }
   Widget* createExt(SvgNode* n) const override { ASSERT(0 && "Widgets must be created explicitly");  return new Widget(n); }
 
   Widget* cloneNode() const;
@@ -96,10 +96,12 @@ public:
   bool isFocusable = false;
   std::shared_ptr<void> m_userData;
 
-  real shadowDx = 0, shadowDy = 0, shadowBlur = 0, shadowSpread = 0;
-  Color shadowColor;
-  Rect shadowBounds(Rect b) const { return b.pad(shadowSpread).pad(0.5*shadowBlur + 1).translate(shadowDx, shadowDy); }
-  bool hasShadow() const { return shadowSpread > 0 || shadowBlur > 0; }
+  struct BoxShadow {
+    Color color;
+    real dx = 0, dy = 0, radius = 0, blur = 0, spread = 0;
+    Rect bounds(Rect b) const { return b.pad(spread).pad(0.5*blur + 1).translate(dx, dy); }
+  };
+  std::unique_ptr<BoxShadow> m_shadow;
 };
 
 class AbsPosWidget : public Widget

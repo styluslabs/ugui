@@ -3,10 +3,10 @@
 const char* defaultColorsCSS = R"#(
 svg.window  /* :root */
 {
-  --dark: #101010;
-  --window: #303030;
-  --light: #505050;
-  --base: #202020;
+  --dark: #101010;  /* toolbar */
+  --window: #303030;  /* menu, dialog */
+  --light: #505050;  /* separator */
+  --base: #202020;  /* list, inputbox */
   --button: #555555;
   --hovered: #32809C;
   --pressed: #32809C;
@@ -179,14 +179,14 @@ static const char* defaultWidgetSVG = R"#(
   </defs>
 
   <g id="menu" class="menu" display="none" position="absolute" box-anchor="fill" layout="box">
-    <rect class="background" box-anchor="fill" width="20" height="20"/>
+    <rect class="background menu-bg" box-anchor="fill" width="20" height="20"/>
     <g class="child-container" box-anchor="fill" layout="flex" flex-direction="column">
     </g>
   </g>
 
   <!-- thin space between menu items acts as separator, so we don't want class=background on menu item BG -->
   <g id="menuitem-standard" class="menuitem" box-anchor="fill" margin="1 0" layout="box">
-    <rect box-anchor="hfill" width="150" height="36"/>
+    <rect class="menuitem-bg" box-anchor="hfill" width="150" height="36"/>
     <g box-anchor="left vfill" layout="flex" flex-direction="row">
       <g class="menu-icon-container" layout="box" margin="0 2">
         <!-- invisible rectangle is to fix size even if no icon -->
@@ -198,7 +198,7 @@ static const char* defaultWidgetSVG = R"#(
   </g>
 
   <g id="menuitem-submenu" class="menuitem" box-anchor="fill" margin="1 0" layout="box">
-    <rect box-anchor="hfill" width="150" height="36"/>
+    <rect class="menuitem-bg" box-anchor="hfill" width="150" height="36"/>
     <g box-anchor="fill" layout="flex" flex-direction="row">
       <g class="menu-icon-container" layout="box" margin="0 2">
         <rect fill="none" width="36" height="36"/>
@@ -210,7 +210,7 @@ static const char* defaultWidgetSVG = R"#(
   </g>
 
   <g id="menuitem-custom" class="menuitem" box-anchor="fill" margin="1 0" layout="box">
-    <rect box-anchor="hfill" width="150" height="36"/>
+    <rect class="menuitem-bg" box-anchor="hfill" width="150" height="36"/>
     <g class="menuitem-container" box-anchor="fill" layout="box">
     </g>
   </g>
@@ -257,7 +257,7 @@ static const char* defaultWidgetSVG = R"#(
   </g>
 
   <g id="pushbutton" class="pushbutton" box-anchor="fill" layout="box">
-    <rect class="background" box-anchor="hfill" width="36" height="36"/>  <!-- rx="8" ry="8" -->
+    <rect class="background pushbtn-bg" box-anchor="hfill" width="36" height="36"/>  <!-- rx="8" ry="8" -->
     <text class="title" margin="8 8"></text>
   </g>
 
@@ -304,7 +304,7 @@ static const char* defaultWidgetSVG = R"#(
     <g class="combo_menu menu" display="none" position="absolute" top="100%" left="0" box-anchor="fill" layout="box">
       <!-- invisible rect to set minimum width; proper soln would be to support left=0 right=0 to stretch -->
       <rect class="combo-menu-min-width" width="150" height="36" fill="none"/>
-      <rect class="background" box-anchor="fill" width="20" height="20"/>
+      <rect class="background menu-bg" box-anchor="fill" width="20" height="20"/>
       <g class="child-container" box-anchor="fill" layout="flex" flex-direction="column">
         <g class="combo_proto comboitem" display="none" box-anchor="fill" layout="box">
           <rect box-anchor="hfill" width="36" height="36"/>
