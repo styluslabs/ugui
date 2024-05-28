@@ -1110,15 +1110,6 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
       tappedWidget = widget;
       return gui->sendEvent(window(), this, event);
     }
-    if(isLongPressOrRightClick(event)) {
-      isPressedGroupContainer = true;
-      if(gui->sendEvent(window(), widget, event)) {  //&& gui->pressedWidget != this) {
-        cleanup(gui, event);
-        setOverscroll(0);
-      }
-      isPressedGroupContainer = false;
-      return true;
-    }
     // allow use of modifier key to pass wheel event to underlying widget
     bool wheelnomod = !PLATFORM_MOBILE && event->type == SDL_MOUSEWHEEL && !(event->wheel.direction >> 16);
     if(wheelnomod)
@@ -1126,15 +1117,26 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
 
     if(gui->pressedWidget != this) return false;
 
+    if(isLongPressOrRightClick(event)) {
+      gui->pressedWidget = NULL;
+      if(gui->sendEvent(window(), widget, event)) {
+        cleanup(gui, event);
+        setOverscroll(0);
+        return true;
+      }
+      gui->pressedWidget = this;
+      return true;
+    }
     if(event->type == SDL_FINGERMOTION) {
       if(testPassThru) {
+        Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
+        real dx = std::abs(dr.x), dy = std::abs(dr.y);
+        if(dx + dy < 0.5) return true;  // require some motion for test
         testPassThru = false;
         Widget* backupFocused = window()->focusedWidget;
         auto backupClosedMenu = gui->lastClosedMenu;
         gui->pressedWidget = NULL;
         if(gui->sendEvent(window(), tappedWidget, &gui->pressEvent) && gui->pressedWidget) {
-          Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
-          real dx = std::abs(dr.x), dy = std::abs(dr.y);
           if(gui->pressedWidget->node->hasClass("draggable") || (scrollLimits.width() == 0 && dx >= 2*dy)
               || (scrollLimits.height() == 0 && dy >= 2*dx)) {
             if(gui->sendEvent(window(), widget, event)) {
@@ -1261,7 +1263,6 @@ bool ScrollWidget::forwardEvent(SvgGui* gui, SDL_Event* event, Point pos)
 void ScrollWidget::cleanup(SvgGui* gui, SDL_Event* event)
 {
   testPassThru = false;
-  fadeTimer = NULL;
   gui->removeTimers(this);
   if(enterEventSent) {
     SDL_Event enterleave = {0};
@@ -1302,13 +1303,15 @@ void ScrollWidget::scroll(Point dr)
     //PLATFORM_LOG("prevPos.y: %.2f, dy: %.2f, ty: %.2f, by: %.2f; final dy: %.2f\n", prevPos.y, dr.y, ty, by, scrollY - pos.y);
     //if(ty > 0) pos.y = scrollLimits.top + overScroll/(ty/overScroll + 1);
     //else if(by > 0) pos.y = scrollLimits.bottom - overScroll/(by/overScroll + 1);
-    yHandle->node->setAttr<float>("opacity", 1.0);
-    fadeTimer = window()->gui()->setTimer(750, this, fadeTimer, [this, opacity=1.0]() mutable {
-      opacity -= flingTimerMs/750.0;
-      yHandle->node->setAttr<float>("opacity", std::max(0.0, opacity));
-      if(opacity <= 0) fadeTimer = NULL;
-      return opacity > 0 ? flingTimerMs : 0;
-    });
+    if(!tappedWidget) {
+      yHandle->node->setAttr<float>("opacity", 1.0);
+      fadeTimer = window()->gui()->setTimer(750, yHandle, fadeTimer, [this, opacity=1.0]() mutable {
+        opacity -= flingTimerMs/750.0;
+        yHandle->node->setAttr<float>("opacity", std::max(0.0, opacity));
+        if(opacity <= 0) fadeTimer = NULL;
+        return opacity > 0 ? flingTimerMs : 0;
+      });
+    }
   }
   setScrollPos(pos);
 }
