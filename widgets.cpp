@@ -1023,7 +1023,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     }
     if(event->type == SDL_FINGERDOWN
         && event->tfinger.fingerId == SDL_BUTTON_LMASK && event->tfinger.touchId != SDL_TOUCH_MOUSEID) {
-      if(gui->pressedWidget == this) return true;  // stop propagation of testPassThru event
+      if(testPassThru) return true;  // stop propagation of testPassThru event
       prevPos = Point(event->tfinger.x, event->tfinger.y);
       //prevEventTime = event->tfinger.timestamp;
       initialPos = prevPos;
@@ -1132,7 +1132,6 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
         Point dr = Point(event->tfinger.x, event->tfinger.y) - initialPos;
         real dx = std::abs(dr.x), dy = std::abs(dr.y);
         if(dx + dy < 0.5) return true;  // require some motion for test
-        testPassThru = false;
         Widget* backupFocused = window()->focusedWidget;
         auto backupClosedMenu = gui->lastClosedMenu;
         gui->pressedWidget = NULL;
@@ -1148,6 +1147,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
           // drag event not accepted
           gui->pressedWidget->sdlUserEvent(gui, SvgGui::OUTSIDE_PRESSED, 0, event, NULL);  //this);
         }
+        testPassThru = false;  // also cleared by cleanup()
         gui->pressedWidget = this;
         if(window()->focusedWidget != backupFocused)
           gui->setFocused(this);

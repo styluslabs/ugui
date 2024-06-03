@@ -430,6 +430,8 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
     return true;
   }
   else if(event->type == SvgGui::FOCUS_LOST) {
+    if(contextMenu->isVisible())
+      gui->closeMenus();
     if(!isReadOnly())
       gui->stopTextInput();  // hide keyboard on mobile
     cursor->setVisible(false);

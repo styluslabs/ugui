@@ -1084,8 +1084,11 @@ bool SvgGui::setFocused(Widget* widget, FocusReason reason)
     return true;
   if(!widget)
     return false;
-  if(win->focusedWidget)
-    win->focusedWidget->sdlUserEvent(this, FOCUS_LOST, reason, widget);  // user.data1 is the widget gaining focus
+  // clear focusedWidget before sending event to avoid, e.g., extraneous FOCUS_GAINED events from menu closing
+  Widget* prev = win->focusedWidget;
+  win->focusedWidget = NULL;
+  if(prev)
+    prev->sdlUserEvent(this, FOCUS_LOST, reason, widget);  // user.data1 is the widget gaining focus
   win->focusedWidget = widget;
   widget->sdlUserEvent(this, FOCUS_GAINED, reason);
   return true;
