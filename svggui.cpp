@@ -623,9 +623,8 @@ static lay_id prepareLayout(lay_context* ctx, Widget* ext)
     ext->updateLayoutVars();
 
   Rect bbox;
-  if(ext->onPrepareLayout)
-    bbox = ext->onPrepareLayout();
-  if(!bbox.isValid() && node->asContainerNode() && (ext->layContain & Widget::LAYX_HASLAYOUT)) { //node->hasAttribute("layout")) {
+  if(ext->onPrepareLayout && (bbox = ext->onPrepareLayout()).isValid()) {}
+  else if(node->asContainerNode() && (ext->layContain & Widget::LAYX_HASLAYOUT)) { //node->hasAttribute("layout")) {
     for(SvgNode* child : node->asContainerNode()->children()) {
       if(!child->isVisible() || child->displayMode() == SvgNode::AbsoluteMode)
         continue;
