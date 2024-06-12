@@ -15,7 +15,7 @@
 #define SDL_main main
 #endif
 
-#define SVGGUI_FINGERCANCEL 0x777
+enum SvgGui_Events { SVGGUI_FINGERCANCEL=0x9F01, SVGGUI_KEYBOARD_HIDDEN, SVGGUI_IME_TEXT_UPDATE };
 
 // random numbers for SDL_TouchID - hopefully won't collide with a real touch device id
 // - originally I cut and pasted these into several files ... that was a mistake
