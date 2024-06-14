@@ -720,8 +720,12 @@ SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* f
       textEdit->sdlEvent(gui, event);  // forward event to clear focus
       return true;
     }
-    else if(event->type == SvgGui::FOCUS_GAINED && event->user.code == SvgGui::REASON_PRESSED)
-      textEdit->selectAll();
+    //else if(event->type == SvgGui::FOCUS_GAINED && event->user.code == SvgGui::REASON_PRESSED) {
+    //  // select all when tapped ... not sure if this is desireable or not
+    //  textEdit->selectAll();
+    //  if(gui->pressedWidget == textEdit)
+    //    gui->pressedWidget = NULL;  // to prevent finger up from clearing selection
+    //}
     return false;
   });
 
