@@ -29,6 +29,7 @@ public:
   int maxLength = defaultMaxLength;
   enum {NORMAL=0, READ_ONLY=1, PASSWORD=2, PASSWORD_SHOWLAST=3} editMode = NORMAL;
   const char* passChar = u8"\u2022";
+  bool clearFocusOnDone = true;  // Enter or Esc keys
 
   static int defaultMaxLength;
 

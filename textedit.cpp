@@ -359,6 +359,10 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   else if(event->type == SDL_KEYDOWN) {
     SDL_Keycode key = event->key.keysym.sym;
     Uint16 mods = event->key.keysym.mod;
+    if(clearFocusOnDone && (key == SDLK_ESCAPE || key == SDLK_RETURN)) {
+      Widget* fw = window()->focusedWidget;
+      gui->setFocused(fw ? fw->parent() : window());
+    }
     // we should probably modify stb_textedit_key to return false if key ignored
     if(key == SDLK_ESCAPE || key == SDLK_RETURN || key == SDLK_TAB || key == SDLK_PRINTSCREEN)
       return false;
@@ -412,8 +416,8 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
         stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_DELETE);
     }
     uintptr_t packedSel = (uintptr_t)event->user.data2;
-    stbState.select_start = packedSel & 0xFFFF;
-    stbState.cursor = stbState.select_end = packedSel >> 16;
+    stbState.select_start = std::min(text32.size(), packedSel & 0xFFFF);
+    stbState.cursor = stbState.select_end = std::min(text32.size(), packedSel >> 16);
     //PLATFORM_LOG("TextEdit IME_TEXT_CHANGE with text = %s\n", (const char*)event->user.data1);
     textChanged = IME_TEXT_CHANGE;
   }
@@ -597,7 +601,8 @@ void TextEdit::doUpdate()
     else*/ if(selChanged && selStart == selEnd && contextMenu->isVisible()) // e.g. after cut to clipboard
       gui->closeMenus();
 
-    if(gui->currInputWidget == this && (textChanged > LAYOUT_TEXT_CHANGE || selChanged) && textChanged < IME_TEXT_CHANGE) {
+    if(gui->currInputWidget == this && gui->nextInputWidget == this
+        && (textChanged > LAYOUT_TEXT_CHANGE || selChanged) && textChanged < IME_TEXT_CHANGE) {
       //PLATFORM_LOG("doUpdate() is calling setImeText() with text = %s, textChanged = %d and selChanged = %d\n",
       //             utf32_to_utf8(currText).c_str(), textChanged, selChanged);
       gui->setImeText(utf32_to_utf8(currText).c_str(), selStart, selEnd);
@@ -708,13 +713,15 @@ SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* f
 
   TextEdit* textEdit = new TextEdit(textEditNode);
   SpinBox* spinBox = new SpinBox(spinBoxNode, val, inc, min, max, format);
-  setupFocusable(spinBox);  // spinBox->isFocusable = true; textEdit->isFocusable = false;
-  //textEdit->onChanged = [spinBox](const char* s){ spinBox->updateValueFromText(s); };
+  setupFocusable(spinBox);
   spinBox->addHandler([=](SvgGui* gui, SDL_Event* event){
     if(event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_RETURN) {
       spinBox->updateValueFromText(textEdit->text().c_str());
+      textEdit->sdlEvent(gui, event);  // forward event to clear focus
       return true;
     }
+    else if(event->type == SvgGui::FOCUS_GAINED && event->user.code == SvgGui::REASON_PRESSED)
+      textEdit->selectAll();
     return false;
   });
 
