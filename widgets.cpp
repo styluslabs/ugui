@@ -1204,7 +1204,7 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     //if((layBehave & LAY_VFILL) == LAY_VFILL)
     doc->setHeight(desttfd.height());
 
-    if(!hfit && !vfit) { //if(!doc->widthPercent() && !doc->widthPercent()) {
+    if(!hfit || !vfit) {
       // fit contents to container
       contents->setLayoutTransform(Transform2D());
       Transform2D tf = m_layoutTransform;
@@ -1235,10 +1235,12 @@ ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), c
     if(hfit || vfit) {
       // fit container to contents; we don't set either container size - note that this only happens on
       //  first layout; subsequently <svg> dimensions are fixed and contents layout happens in onApplyLayout
+      real scrx = scrollX, scry = scrollY;
       contents->setLayoutTransform(Transform2D());
       setLayoutTransform(Transform2D());
       window()->gui()->layoutWidget(contents, Rect::wh(0, 0));
       Rect bbox = contents->node->bounds();
+      scrollX = scrx; scrollY = scry;  // contents layout w/o bounds will clear scrollX and scrollY
       contents->setLayoutTransform(Transform2D().translate(-scrollX, -scrollY) * contents->layoutTransform());
       return Rect::wh(hfit ? bbox.width() : 0, vfit ? bbox.height() : 0);
     }
