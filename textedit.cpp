@@ -424,7 +424,7 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   else if(event->type == SvgGui::FOCUS_GAINED) {
     if(event->user.code == SvgGui::REASON_TAB)
       selectAll();
-    if(!isReadOnly() && gui->currInputWidget != this) {
+    if(!isReadOnly() && (gui->currInputWidget != this || gui->nextInputWidget != this)) {
       //PLATFORM_LOG("FOCUS_GAINED (reason %d) is calling setImeText() with text = %s\n", event->user.code, utf32_to_utf8(currText).c_str());
       gui->setImeText(utf32_to_utf8(currText).c_str(), stbState.select_start, stbState.select_end);
       gui->startTextInput(this);
@@ -436,7 +436,7 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   else if(event->type == SvgGui::FOCUS_LOST) {
     if(contextMenu->isVisible())
       gui->closeMenus();
-    if(!isReadOnly())
+    if(!isReadOnly() && event->user.code != SvgGui::REASON_WINDOW)
       gui->stopTextInput();  // hide keyboard on mobile
     cursor->setVisible(false);
     gui->removeTimer(this);
