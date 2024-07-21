@@ -1352,8 +1352,11 @@ void ScrollWidget::setScrollPos(Point r)
   if(contents->node->cachedBounds().isValid())
     translateCachedBounds(contents->node, dr);
   contents->node->setDirty(SvgNode::PIXELS_DIRTY);
-  real dy = (node->bounds().height() - yHandle->node->bounds().height())*dr.y/staticLimits.bottom;
-  yHandle->setLayoutTransform(Transform2D::translating(0, dy) * yHandle->layoutTransform());
+  real dy = (yHandle->node->bounds().height() - node->bounds().height())*dr.y/staticLimits.bottom;
+  yHandle->m_layoutTransform = Transform2D::translating(0, dy) * yHandle->m_layoutTransform;
+  if(yHandle->node->cachedBounds().isValid())
+    translateCachedBounds(yHandle->node, Point(0, dy));
+  yHandle->node->setDirty(SvgNode::PIXELS_DIRTY);
 #endif
   scrollX = newx;
   scrollY = newy;
