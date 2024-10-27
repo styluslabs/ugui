@@ -884,10 +884,10 @@ Slider::Slider(SvgNode* n) : Widget(n), sliderPos(0)
     return false;
   });
 
-  onApplyLayout = [this](const Rect& src, const Rect& dest){
+  sliderBg->onApplyLayout = [this](const Rect& src, const Rect& dest){
     if(src.toSize() != dest.toSize()) {
-      Rect rect = sliderBg->node->bounds();
-      sliderHandle->setLayoutTransform(Transform2D().translate(rect.width()*sliderPos, 0));
+      //Rect rect = sliderBg->node->bounds();
+      sliderHandle->setLayoutTransform(Transform2D().translate(dest.width()*sliderPos, 0));
       //sliderHandle->node->appendStyleProperty(new SvgTransformStyle(Transform2D().translate(rect.width()*sliderPos, 0)));
     }
     return false;  // we do not replace the normal layout (although that should be a no-op)

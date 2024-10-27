@@ -335,10 +335,15 @@ static const char* defaultWidgetSVG = R"#(
   </g>
 
   <g id="slider" class="slider" box-anchor="hfill" layout="box">
-    <rect class="slider-bg background" box-anchor="hfill" width="200" height="48"/>
-    <g class="slider-handle">
-      <rect class="slider-handle-outer" x="-12" y="-2" width="24" height="52"/>
-      <rect class="slider-handle-inner" x="-9" y="0" width="18" height="48"/>
+    <rect class="min-width-rect" width="150" height="28" fill="none"/>
+    <rect class="slider-bg background" box-anchor="hfill" width="200" height="28" margin="0 12"/>
+    <g class="slider-handle-container" box-anchor="left">
+      <!-- invisible rect to set left edge of box so slider-handle can move freely -->
+      <rect width="28" height="28" fill="none"/>
+      <g class="slider-handle" transform="translate(10,0)">
+        <rect class="slider-handle-outer" x="-12" y="-2" width="24" height="32"/>
+        <rect class="slider-handle-inner" x="-9" y="0" width="18" height="28"/>
+      </g>
     </g>
   </g>
 
