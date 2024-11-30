@@ -986,6 +986,7 @@ void Splitter::setDirection(SizerPosition pos)
 
 ScrollWidget::ScrollWidget(SvgDocument* doc, Widget* _contents) : Widget(doc), contents(_contents)
 {
+  flingTimerMs = 16;  // let's try 60 FPS
   // TODO: if we follow the model of the other widget classes, this should use selectFirst() to find contents!
   doc->addClass("scroll-widget");
   addWidget(contents);
