@@ -509,12 +509,15 @@ void TextEdit::doUpdate()
       }
       // selection
       tspan = new SvgTspan(true);
+      if(selmin > 0)
+        tspan->m_x.push_back(glyphPos.at(selmin).left);
       tspan->addClass("text-selection");
       tspan->addText(utf32_to_utf8(displayText.substr(selmin, selmax - selmin)).c_str());
       textNode->addTspan(tspan);
       // after selection
       if(selmax < int(displayText.size())) {
         tspan = new SvgTspan(false);
+        tspan->m_x.push_back(glyphPos.at(selmax).left);
         tspan->addText(utf32_to_utf8(displayText.substr(selmax)).c_str());
         textNode->addTspan(tspan);
       }
