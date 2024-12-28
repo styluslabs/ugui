@@ -10,6 +10,7 @@ public:
   ColorSliders(SvgNode* n, bool allowalpha = true);
 
   void setColor(Color c);
+  void setVisibleGroup(bool hsv);
 
   std::function<void(Color)> onColorChanged;
 
@@ -54,4 +55,6 @@ private:
 
 std::string colorToHex(Color c);
 Button* createColorBtn();
+Widget* createTabBar(const std::vector<std::string>& titles, std::function<void(int)> onChanged);
 ColorEditBox* createColorEditBox(bool allowAlpha = true, bool withColorPicker = true);
+ColorEditBox* createColorEditBox(bool allowAlpha, ColorSliders* colorSliders);

@@ -14,7 +14,27 @@ Button* createColorBtn()
   return new Button(widgetNode("#colorbutton"));
 }
 
-ColorEditBox* createColorEditBox(bool allowAlpha, bool withColorPicker)
+// move to widgets.cpp when we find another use case
+Widget* createTabBar(const std::vector<std::string>& titles, std::function<void(int)> onChanged)
+{
+  Widget* row = createRow();
+  for(size_t ii = 0; ii < titles.size(); ++ii) {
+    Button* btn = createToolbutton(NULL, titles[ii].c_str(), true);
+    btn->node->addClass("tabbar-btn");
+    if(ii == 0) btn->setChecked(true);
+    btn->onClicked = [=](){
+      if(btn->isChecked()) return;
+      auto children = row->select(".tabbar-btn");
+      for(Widget* child : children)
+        static_cast<Button*>(child)->setChecked(child == btn);
+      onChanged(ii);
+    };
+    row->addWidget(btn);
+  }
+  return row;
+}
+
+ColorEditBox* createColorEditBox(bool allowAlpha, ColorSliders* colorSliders)
 {
   static const char* colorBoxSVG = R"#(
     <g id="coloreditbox" class="inputbox colorbox" layout="box">
@@ -35,8 +55,33 @@ ColorEditBox* createColorEditBox(bool allowAlpha, bool withColorPicker)
   SvgG* textEditNode = static_cast<SvgG*>(colorBoxNode->selectFirst(".textbox"));
   textEditNode->addChild(textEditInnerNode());
 
-  ColorSliders* colorPicker = withColorPicker ? new ColorSliders(new SvgG(), allowAlpha) : NULL;
-  ColorEditBox* colorBox = new ColorEditBox(colorBoxNode, colorPicker, allowAlpha);
+  return new ColorEditBox(colorBoxNode, colorSliders, allowAlpha);
+}
+
+ColorEditBox* createColorEditBox(bool allowAlpha, bool withColorPicker)
+{
+  static const char* menuIndSVG = R"#(<g>
+    <use fill="none" stroke="white" stroke-width="4" x="21" y="23" width="12" height="12" xlink:href=":/icons/chevron_down.svg"/>
+    <use fill="black" x="21" y="23" width="12" height="12" xlink:href=":/icons/chevron_down.svg"/>
+  </g>)#";
+
+  ColorSliders* colorSliders = withColorPicker ? new ColorSliders(new SvgG(), allowAlpha) : NULL;
+
+  ColorEditBox* colorBox = createColorEditBox(allowAlpha, colorSliders);
+
+  if(colorSliders) {
+    auto setVisibleGroup = [=](int tabnum){ colorSliders->setVisibleGroup(tabnum != 0); };
+    Widget* tabBar = createTabBar({"RGB", "HSV"}, setVisibleGroup);
+    tabBar->addWidget(createStretch());
+    Widget* colorPicker = createColumn({tabBar, colorSliders});
+
+    Menu* colorPickerMenu = createMenu(Menu::VERT_LEFT);
+    colorPickerMenu->addWidget(colorPicker);
+    colorBox->previewBtn->containerNode()->addChild(loadSVGFragment(menuIndSVG));  // add menu indicator
+    colorBox->previewBtn->setMenu(colorPickerMenu);
+    colorPickerMenu->isPressedGroupContainer = false;
+  }
+
   //colorBox->isFocusable = true;
   return colorBox;
 }
@@ -44,11 +89,6 @@ ColorEditBox* createColorEditBox(bool allowAlpha, bool withColorPicker)
 ColorEditBox::ColorEditBox(SvgNode* n, ColorSliders* _colorPicker, bool allowalpha)
     : Widget(n), allowAlpha(allowalpha), editType(HEX_COLOR), colorPicker(_colorPicker)
 {
-  static const char* menuIndSVG = R"#(<g>
-    <use fill="none" stroke="white" stroke-width="4" x="21" y="23" width="12" height="12" xlink:href=":/icons/chevron_down.svg"/>
-    <use fill="black" x="21" y="23" width="12" height="12" xlink:href=":/icons/chevron_down.svg"/>
-  </g>)#";
-
   hexEdit = new TextEdit(containerNode()->selectFirst(".textbox"));
   setMinWidth(hexEdit, 100);
   setupFocusable(hexEdit);
@@ -64,12 +104,6 @@ ColorEditBox::ColorEditBox(SvgNode* n, ColorSliders* _colorPicker, bool allowalp
       if(onColorChanged)
         onColorChanged(c);
     };
-
-    Menu* colorPickerMenu = createMenu(Menu::VERT_LEFT);
-    colorPickerMenu->addWidget(colorPicker);
-    previewBtn->containerNode()->addChild(loadSVGFragment(menuIndSVG));  // add menu indicator
-    previewBtn->setMenu(colorPickerMenu);
-    colorPickerMenu->isPressedGroupContainer = false;
   }
 
   hexEdit->onChanged = [this](const char* s){
@@ -193,23 +227,14 @@ Slider* ColorSliders::createGroup(
   return slider;
 }
 
-static Widget* createTabBar(const std::vector<std::string>& titles, std::function<void(int)> onChanged)
+void ColorSliders::setVisibleGroup(bool hsv)
 {
-  Widget* row = createRow();
-  for(size_t ii = 0; ii < titles.size(); ++ii) {
-    Button* btn = createToolbutton(NULL, titles[ii].c_str(), true);
-    btn->node->addClass("tabbar-btn");
-    if(ii == 0) btn->setChecked(true);
-    btn->onClicked = [=](){
-      if(btn->isChecked()) return;
-      auto children = row->select(".tabbar-btn");
-      for(Widget* child : children)
-        static_cast<Button*>(child)->setChecked(child == btn);
-      onChanged(ii);
-    };
-    row->addWidget(btn);
-  }
-  return row;
+  sliderR->parent()->setVisible(!hsv);
+  sliderG->parent()->setVisible(!hsv);
+  sliderB->parent()->setVisible(!hsv);
+  sliderH->parent()->setVisible(hsv);
+  sliderS->parent()->setVisible(hsv);
+  sliderV->parent()->setVisible(hsv);
 }
 
 ColorSliders::ColorSliders(SvgNode* n, bool allowalpha) : Widget(n)
@@ -232,18 +257,6 @@ ColorSliders::ColorSliders(SvgNode* n, bool allowalpha) : Widget(n)
       onColorChanged(currColor.toColor());
   };
 
-  auto setVisibleGroup = [this](int hsv){
-    sliderR->parent()->setVisible(!hsv);
-    sliderG->parent()->setVisible(!hsv);
-    sliderB->parent()->setVisible(!hsv);
-    sliderH->parent()->setVisible(hsv);
-    sliderS->parent()->setVisible(hsv);
-    sliderV->parent()->setVisible(hsv);
-  };
-  Widget* tabBar = createTabBar({"RGB", "HSV"}, setVisibleGroup);
-  tabBar->addWidget(createStretch());
-  addWidget(tabBar);
-
   sliderR = createGroup("R", onRgb);
   sliderG = createGroup("G", onRgb);
   sliderB = createGroup("B", onRgb);
@@ -256,7 +269,7 @@ ColorSliders::ColorSliders(SvgNode* n, bool allowalpha) : Widget(n)
   sliderH = createGroup("H", onHsv, colorsH);
   sliderS = createGroup("S", onHsv);
   sliderV = createGroup("V", onHsv);
-  setVisibleGroup(0);
+  setVisibleGroup(false);
 
   sliderA = NULL;
   if(allowalpha) {
