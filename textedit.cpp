@@ -291,7 +291,7 @@ void TextEdit::showMenu(SvgGui* gui)
   if(y > 0) {
     Rect pbounds = contextMenu->parent()->node->bounds();
     contextMenu->node->removeAttr("top");
-    contextMenu->node->setAttribute("bottom", fstring("%g", pbounds.bottom - y).c_str());
+    contextMenu->node->setAttribute("bottom", std::to_string(pbounds.bottom - y).c_str());
   }
 }
 

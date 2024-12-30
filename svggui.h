@@ -4,6 +4,7 @@
 #include <functional>
 #include "usvg/svgnode.h"
 #include "ulib/threadutil.h"  // Semaphore
+#include "ulib/platformutil.h"
 #include "svggui_platform.h"
 
 // https://github.com/randrew/layout - based on https://bitbucket.org/duangle/oui-blendish
@@ -14,6 +15,7 @@
 
 class Window;
 class SvgGui;
+class Painter;
 
 class Widget : public SvgNodeExtension
 {
