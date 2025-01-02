@@ -630,9 +630,12 @@ TextLabel::TextLabel(SvgNode* n) : TextBox(n)
   onApplyLayout = [this](const Rect& src, const Rect& dest){
     if(src.width() == dest.width() || (layBehave & LAY_HFILL) != LAY_HFILL)
       return false;
+    Point dr(dest.left - src.left, dest.top - src.top);
+    if(std::abs(dr.x) < 1E-3 && std::abs(dr.y) < 1E-3 && src.width() < dest.width() && textNode->text() == origText)
+      return true;
     textNode->setText(origText.c_str());
     SvgPainter::elideText(textNode, dest.width());
-    m_layoutTransform.translate(dest.left - src.left, dest.top - src.top);
+    m_layoutTransform.translate(dr);
     node->invalidate(true);
     return true;
   };
