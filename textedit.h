@@ -53,7 +53,7 @@ private:
   SvgRect* selectionBGRect;
   SvgText* emptyTextNode;
   std::u32string currText;
-  std::vector<Rect> glyphPos;
+  std::vector<GlyphPosition> glyphPos;
   int textChanged = 0;
   int selStart = 0;
   int selEnd = 0;
