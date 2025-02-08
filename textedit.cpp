@@ -359,12 +359,12 @@ bool TextEdit::sdlEventFn(SvgGui* gui, SDL_Event* event)
   else if(event->type == SDL_KEYDOWN) {
     SDL_Keycode key = event->key.keysym.sym;
     Uint16 mods = event->key.keysym.mod;
-    if(clearFocusOnDone && (key == SDLK_ESCAPE || key == SDLK_RETURN)) {
+    if(clearFocusOnDone && (key == SDLK_ESCAPE || key == SDLK_RETURN || key == SDLK_AC_BACK)) {
       Widget* fw = window()->focusedWidget;
       gui->setFocused(fw ? fw->parent() : window());
     }
     // we should probably modify stb_textedit_key to return false if key ignored
-    if(key == SDLK_ESCAPE || key == SDLK_RETURN || key == SDLK_TAB || key == SDLK_PRINTSCREEN)
+    if(key == SDLK_ESCAPE || key == SDLK_RETURN || key == SDLK_TAB || key == SDLK_PRINTSCREEN || key == SDLK_AC_BACK)
       return false;
     if(isReadOnly() && (key == SDLK_DELETE || key == SDLK_BACKSPACE))
       return true;

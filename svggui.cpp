@@ -1475,20 +1475,16 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
       mtevent.user.data2 = &touchPoints;
 
       // clear pressedWidget if it does not accept initial multitouch event
-      if(!wasMultiTouch && pressedWidget) {
-        if(sendEventFilt(win, widget, &mtevent)) {
-          if(event->type == SVGGUI_FINGERCANCEL && itTouchPoint != touchPoints.end())
-            touchPoints.erase(itTouchPoint);
-          return true;
-        }
+      bool res = sendEventFilt(win, widget, &mtevent);
+      if(!res && !wasMultiTouch && pressedWidget) {
         widget = pressedWidget->parent();
         // send outside pressed to clear pressedWidget
         pressedWidget->sdlUserEvent(this, OUTSIDE_PRESSED, 0, &mtevent, widget);
         pressedWidget = NULL;
-        // fall-through to send multitouch again
+        // send multitouch again w/o pressedWidget
+        res = sendEventFilt(win, widget, &mtevent);
       }
 
-      bool res = sendEventFilt(win, widget, &mtevent);
       // now we can erase released touch point
       if((event->type == SDL_FINGERUP || event->type == SVGGUI_FINGERCANCEL) && itTouchPoint != touchPoints.end())
         touchPoints.erase(itTouchPoint);
