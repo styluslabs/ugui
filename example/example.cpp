@@ -1,4 +1,5 @@
 #include <fstream>
+#include "usvg/svgpainter.h"
 #include "usvg/svgparser.h"
 #include "usvg/svgwriter.h"
 #include "ugui/svggui.h"
@@ -23,9 +24,21 @@
 #include "glad.h"
 #endif
 
+#ifdef USE_GLFW
+#define GLFW_INCLUDE_NONE
+#include "glfwSDL.h"
+#include "ulib/threadutil.h"
+#endif
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+#define FONTSTASH_IMPLEMENTATION
+#include "fontstash.h"
+
 #define NANOVG_GL3_IMPLEMENTATION
 #define NVG_LOG PLATFORM_LOG
-#include "nanovg_gl.h"
+#include "nanovg_vtex.h"
 #include "nanovg_gl_utils.h"
 
 #define PLATFORMUTIL_IMPLEMENTATION
@@ -40,7 +53,7 @@
 // SVG and CSS for GUI
 #include "ugui/theme.cpp"
 
-#include "usvg/test/Roboto-Regular.c"
+#include "usvg/test/Roboto-Regular.inl"
 
 
 // String resources:
@@ -64,8 +77,30 @@ const char* getResource(const std::string& name)
 
 static SvgGui* svgGui = NULL;
 
+#ifdef USE_GLFW
+void PLATFORM_WakeEventLoop() { glfwPostEmptyEvent(); }
+
+static std::thread::id mainThreadId;
+static ThreadSafeQueue< std::function<void()> > taskQueue;
+
+void glfwSDLEvent(SDL_Event* event)
+{
+  if(!event->common.timestamp) { event->common.timestamp = SDL_GetTicks(); }
+  if(std::this_thread::get_id() == mainThreadId) {
+    svgGui->sdlEvent(event);
+  }
+  else {
+    taskQueue.push_back([_event = *event]() mutable { svgGui->sdlEvent(&_event); });
+    PLATFORM_WakeEventLoop();
+  }
+}
+
+#else
 // SDL_WaitEvent() actually does SDL_PollEvent() + sleep(10 ms) in a loop, so it will find the timer event
 void PLATFORM_WakeEventLoop() {}
+#endif
+
+void PLATFORM_setImeText(const char* text, int selStart, int selEnd) {}
 
 Window* createExampleUI()
 {
@@ -130,6 +165,25 @@ int SDL_main(int argc, char* argv[])
   winLogToConsole = attachParentConsole();  // printing to old console is slow, but Powershell is fine
 #endif
 
+#ifdef USE_GLFW
+  mainThreadId = std::this_thread::get_id();
+
+  if(!glfwInit()) { PLATFORM_LOG("glfwInit failed.\n"); return -1; }
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  //glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1);
+
+  GLFWwindow* glfwWin = glfwCreateWindow(1000, 600, "UGUI Example", NULL, NULL);
+  if(!glfwWin) { PLATFORM_LOG("glfwCreateWindow failed.\n"); return -1; }
+  glfwSDLInit(glfwWin);  // setup event callbacks
+
+  glfwMakeContextCurrent(glfwWin);
+  gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
+  glfwSwapInterval(0);
+  glfwSetTime(0);
+#else
   SDL_Init(SDL_INIT_VIDEO);
 #if PLATFORM_MOBILE
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
@@ -159,15 +213,14 @@ int SDL_main(int argc, char* argv[])
 #if PLATFORM_WIN || PLATFORM_LINUX
   gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress);
 #endif
+#endif // SDL
 
-  int nvgFlags = NVG_AUTOW_DEFAULT | NVG_SRGB;
-  int nvglFBFlags = NVG_IMAGE_SRGB;
-
-  NVGcontext* nvgContext = nvglCreate(nvgFlags);  //NVG_DEBUG);
-  if(!nvgContext) { PLATFORM_LOG("nvglCreate failed.\n"); return -1; }
-
-  Painter::vg = nvgContext;
+  Painter::initFontStash(FONS_SUMMED);
   Painter::loadFontMem("sans", Roboto_Regular_ttf, Roboto_Regular_ttf_len);
+
+  Painter boundsPainter(Painter::PAINT_NULL);
+  SvgPainter boundsCalc(&boundsPainter);
+  SvgDocument::sharedBoundsCalc = &boundsCalc;
 
   SvgParser::openStream = [](const char* name) -> std::istream* {
     if(name[0] == ':' && name[1] == '/') {
@@ -180,18 +233,37 @@ int SDL_main(int argc, char* argv[])
   };
 
   loadIconRes();
-  // hook to support loading from resources; can we move this somewhere to deduplicate w/ other projects?
-  setGuiResources(defaultWidgetSVG, defaultStyleCSS);
+  SvgDocument* widgetDoc = SvgParser().parseString(defaultWidgetSVG);
+  setGuiResources(widgetDoc);
   SvgGui* gui = new SvgGui();
   svgGui = gui;  // needed by glfwSDLEvent()
   // scaling
-  gui->paintScale = 210.0/150.0;
+#ifdef USE_GLFW
+  const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+  float dpi = std::max(mode->width, mode->height)/11.2f;
+#elif PLATFORM_DESKTOP
+  SDL_Rect r;
+  int disp = SDL_GetWindowDisplayIndex(sdlWindow);
+  SDL_GetDisplayBounds(disp < 0 ? 0 : disp, &r);
+  float dpi = std::max(r.h, r.w)/11.2f;
+#else
+  float dpi = 150;
+  SDL_GetDisplayDPI(0, NULL, &dpi, NULL);
+#endif
+  gui->paintScale = std::max(1.5, dpi/150.0);
   gui->inputScale = 1/gui->paintScale;
-  nvgAtlasTextThreshold(nvgContext, 24 * gui->paintScale);  // 24px font is default for dialog titles
 
-  Painter* painter = new Painter();
-  NVGLUframebuffer* nvglFB = nvgluCreateFramebuffer(nvgContext, 0, 0, NVGLU_NO_NVG_IMAGE | nvglFBFlags);
+  SvgCssStylesheet* styleSheet = new SvgCssStylesheet;
+  styleSheet->parse_stylesheet(defaultColorsCSS);
+  styleSheet->parse_stylesheet(defaultStyleCSS);
+  styleSheet->sort_rules();
+  gui->setWindowStylesheet(std::unique_ptr<SvgCssStylesheet>(styleSheet));
+
+  int nvglFBFlags = NVG_IMAGE_SRGB;
+  Painter* painter = new Painter(Painter::PAINT_GL | Painter::SRGB_AWARE | Painter::CACHE_IMAGES);
+  NVGLUframebuffer* nvglFB = nvgluCreateFramebuffer(painter->vg, 0, 0, NVGLU_NO_NVG_IMAGE | nvglFBFlags);
   nvgluSetFramebufferSRGB(1);  // no-op for GLES - sRGB enabled iff FB is sRGB
+  painter->setAtlasTextThreshold(24 * gui->paintScale);
 
   if(glGetString) {
     const char* glVendor = (const char*)glGetString(GL_VENDOR);
@@ -201,7 +273,11 @@ int SDL_main(int argc, char* argv[])
   }
 
   Window* win = createExampleUI();
+#ifdef USE_GLFW
+  win->sdlWindow = (SDL_Window*)glfwWin;
+#else
   win->sdlWindow = sdlWindow;
+#endif
   win->addHandler([&](SvgGui*, SDL_Event* event){
     if(event->type == SDL_QUIT || (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_ESCAPE))
       runApplication = false;
@@ -214,12 +290,18 @@ int SDL_main(int argc, char* argv[])
   gui->showWindow(win, NULL);
 
   while(runApplication) {
+    int fbWidth = 0, fbHeight = 0;
+#ifdef USE_GLFW
+    glfwWaitEvents();
+    std::function<void()> queuedFn;
+    while(taskQueue.pop_front(queuedFn)) { queuedFn(); }
+    glfwGetFramebufferSize(glfwWin, &fbWidth, &fbHeight);
+#else
     SDL_Event event;
     SDL_WaitEvent(&event);
     do { gui->sdlEvent(&event); } while(runApplication && SDL_PollEvent(&event));
-
-    int fbWidth = 0, fbHeight = 0;
     SDL_GL_GetDrawableSize(sdlWindow, &fbWidth, &fbHeight);
+#endif
 
     painter->deviceRect = Rect::wh(fbWidth, fbHeight);
     Rect dirty = gui->layoutAndDraw(painter);
@@ -245,15 +327,22 @@ int SDL_main(int argc, char* argv[])
     nvgluSetScissor(0, 0, 0, 0);  // disable scissor for blit
     nvgluBlitFramebuffer(nvglFB, prev);  // blit to prev FBO and rebind it
 
+#ifdef USE_GLFW
+    glfwSwapBuffers(glfwWin);
+#else
     SDL_GL_SwapWindow(sdlWindow);
+#endif
   }
 
   gui->closeWindow(win);
   delete gui;
   delete painter;
   nvgluDeleteFramebuffer(nvglFB);
-  nvglDelete(nvgContext);
+#ifdef USE_GLFW
+  glfwTerminate();
+#else
   SDL_GL_DeleteContext(sdlContext);
   SDL_Quit();
+#endif
   return 0;
 }

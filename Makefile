@@ -13,26 +13,27 @@ SOURCES = \
   ../ulib/image.cpp \
   ../ulib/path2d.cpp \
   ../ulib/painter.cpp \
-  ../nanovg-2/src/nanovg.c \
+  ../nanovgXC/src/nanovg.c \
   svggui.cpp \
   widgets.cpp \
   textedit.cpp \
+  example/example.cpp
 
 # if source contains ../ paths, this should be the <current> directory; if ../../, <parent>/<current>; etc.
 # - this ensures object files remain under build directory
 TOPDIR = ugui
 
-INC = . .. ../nanovg-2/src ../nanovg-2/glad
+INC = . .. ../nanovgXC/src ../nanovgXC/glad
 INCSYS = ../pugixml/src ../stb
-DEFS = PUGIXML_NO_XPATH PUGIXML_NO_EXCEPTIONS NO_MINIZ NO_PAINTER_SW
+DEFS = PUGIXML_NO_XPATH PUGIXML_NO_EXCEPTIONS NO_MINIZ NO_PAINTER_SW NO_PAINTER_SWU
 
 GLFW ?= 0
 ifneq ($(GLFW), 0)
-  SOURCES += example/glfwSDL.c example/example_glfw.cpp
+  SOURCES += example/glfwSDL.c
   LINUX_LIBS = -lglfw
   WIN_LIBS = ../glfw/Release/glfw3.lib
+  DEFS += USE_GLFW SVGGUI_NO_SDL
 else
-  SOURCES += example/example_sdl.cpp
   LINUX_LIBS = -lSDL2
   # also need SDL2main.lib if using prebuilt SDL
   WIN_LIBS = ../SDL/Release/SDL2.lib
@@ -42,7 +43,7 @@ endif
 ifneq ($(windir),)
 # Windows
 
-SOURCES += ../nanovg-2/glad/glad.c
+SOURCES += ../nanovgXC/glad/glad.c
 INCSYS += ../SDL/include ../glfw/include
 DEFS += _USE_MATH_DEFINES UNICODE NOMINMAX
 
@@ -73,7 +74,7 @@ include Makefile.msvc
 else
 # Linux
 
-SOURCES += ../nanovg-2/glad/glad.c
+SOURCES += ../nanovgXC/glad/glad.c
 INCSYS += /usr/include/SDL2
 LIBS = -lpthread -ldl -lGL $(LINUX_LIBS)
 

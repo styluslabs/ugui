@@ -20,7 +20,7 @@ Written for [SDL2](https://libsdl.org/), but [example_glfw.cpp](example/example_
 
 ### Example ###
 
-On Linux, `git clone --recurse-submodules` [ugui-example](https://github.com/styluslabs/ugui-example), `apt install libsdl2-dev`, then `cd ugui && make` to generate `Release/uguitest`.  For other platforms, first build the example app for [nanovgXC](https://github.com/styluslabs/nanovgXC) as described in the nanovgXC README to get makefile and SDL set up properly.
+On Linux, `git clone --recurse-submodules` [Write](https://github.com/styluslabs/Write), `apt install libsdl2-dev`, then `cd ugui && make` to generate `Release/uguitest`.  For other platforms, first build the example app for [nanovgXC](https://github.com/styluslabs/nanovgXC) as described in the nanovgXC README to get makefile and SDL set up properly.
 
 In the app, press Print Screen to write the GUI as SVG to `debug_layout.svg`, press F12 to toggle showing dirty rectangle (red) and layout rectangle (green), and press Esc to exit.
 
