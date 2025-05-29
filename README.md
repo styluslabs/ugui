@@ -16,11 +16,11 @@ Why consider choosing ugui?
 * retained-mode GUI with dirty rectangle/damage support instead of immediate-mode GUI (IMGUI) - only changed portion of window is redrawn
 * lightweight: x64 Linux executable for sample app, depending only on libsdl2, is about 1 MB including uncompressed resources and font.  About 3500 SLOC in ugui.
 
-Written for [SDL2](https://libsdl.org/), but [example_glfw.cpp](example/example_glfw.cpp), with a simple translation layer [glfwSDL.c](example/glfwSDL.c), shows that using a different framework is not difficult.  In the future, platform support may be added to ugui itself.
+Originally written for [SDL2](https://libsdl.org/), but can be used with GLFW (via [glfwSDL.c](example/glfwSDL.c)) or directly with native API (see, e.g., [winmain.cpp](https://github.com/styluslabs/maps/blob/master/app/windows/winmain.cpp) in Ascend Maps).  In the future, direct platform support will be added to ugui.
 
 ### Example ###
 
-On Linux, `git clone --recurse-submodules` [Write](https://github.com/styluslabs/Write), `apt install libsdl2-dev`, then `cd ugui && make` to generate `Release/uguitest`.  For other platforms, first build the example app for [nanovgXC](https://github.com/styluslabs/nanovgXC) as described in the nanovgXC README to get makefile and SDL set up properly.
+On Linux, clone [Write](https://github.com/styluslabs/Write), `apt install libsdl2-dev`, then `cd ugui && make` to generate `Release/uguitest`.  For other platforms, first build the example app for [nanovgXC](https://github.com/styluslabs/nanovgXC) as described in the nanovgXC README to get makefile and SDL set up properly.
 
 In the app, press Print Screen to write the GUI as SVG to `debug_layout.svg`, press F12 to toggle showing dirty rectangle (red) and layout rectangle (green), and press Esc to exit.
 
