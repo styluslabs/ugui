@@ -26,7 +26,7 @@ In the app, press Print Screen to write the GUI as SVG to `debug_layout.svg`, pr
 
 ### Layout ###
 
-The [layout](https://github.com/randrew/layout) library, based on [oui-blendish](https://bitbucket.org/duangle/oui-blendish), is used for calculating layout.  Potential alternatives include [flex](https://github.com/xamarin/flex) and [yoga](https://github.com/facebook/yoga).
+[layout.h](layout.h) from the [layout](https://github.com/randrew/layout) library, based on [oui-blendish](https://bitbucket.org/duangle/oui-blendish), is used for calculating layout.  Potential alternatives include [flex](https://github.com/xamarin/flex), [yoga](https://github.com/facebook/yoga), and [clay](https://github.com/nicbarker/clay).
 
 Supported layout attributes:
 - margin / margin-left -top -right -bottom: <number>
@@ -35,6 +35,15 @@ Supported layout attributes:
 - flex-direction = row | column | row-reverse | column-reverse
 - justify-content = flex-start | flex-end | center | space-between
 - flex-wrap = nowrap | wrap
+
+### Files ###
+
+* [svggui.cpp](svggui.cpp) - core UI logic (`SvgGui` class) and components (`Widget` and `Window` classes)
+* [widgets.cpp](widgets.cpp) - basic GUI widgets (button, menu, combo box, scroll area, etc.)
+* [textedit.cpp](textedit.cpp) - text editing widgets
+* [colorwidgets.cpp](colorwidgets.cpp) - color picking/editing widgets
+* [theme.cpp](theme.cpp) - SVG and CSS for default theme
+* [svggui_sdl.h](svggui_sdl.h) - header for using ugui without SDL
 
 
 ## Dependencies ##
