@@ -1423,7 +1423,9 @@ bool SvgGui::sdlTouchEvent(SDL_Event* event)
     pressEvent = *event;
     event = &pressEvent;  // make sure possible modification of fingerId below gets applied to pressEvent!
   }
-  updateGestures(event);
+  // handle single finger gestures (handling multitouch gestures is left to user)
+  if(!multiTouchActive && (touchPoints.empty() || event->tfinger.fingerId == touchPoints.back().id))
+    updateGestures(event);
   // allow platform interface to send mouse events as finger events
   if(event->tfinger.touchId == SDL_TOUCH_MOUSEID)
     return sendEventFilt(win, widgetAt(win, p), event);
