@@ -552,7 +552,7 @@ void TextEdit::doUpdate()
 
     // start handle
     real spos0 = selStart > 0 ? glyphPos.at(selStart - 1).right : 0;
-    real spos1 = selStart < int(glyphPos.size()) ? glyphPos.at(selStart).left : spos0;
+    real spos1 = selStart < int(glyphPos.size()) ? std::max(0.0, glyphPos.at(selStart).left) : spos0;
     real spos = (spos0 + spos1)/2;
     real shpos = spos - (scrollX - scrollXOffset);
     if(gui && gui->pressedWidget != selStartHandle) {
@@ -571,7 +571,7 @@ void TextEdit::doUpdate()
 
     // cursor/end handle
     real pos0 = stbState.cursor > 0 ? glyphPos.at(stbState.cursor - 1).right : 0;
-    real pos1 = stbState.cursor < int(glyphPos.size()) ? glyphPos.at(stbState.cursor).left : pos0;
+    real pos1 = stbState.cursor < int(glyphPos.size()) ? std::max(0.0, glyphPos.at(stbState.cursor).left) : pos0;
     real pos = (pos0 + pos1)/2;
     cursor->node->setTransform(Transform2D().translate(pos, 0));
     real hpos = pos - (scrollX - scrollXOffset);
