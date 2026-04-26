@@ -228,6 +228,14 @@ void TextEdit::setText(const char* s)
   doUpdate();
 }
 
+void TextEdit::setCursorPos(int pos)
+{
+  stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_LINESTART);
+  while(pos-- > 0)
+    stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_RIGHT);
+  doUpdate();
+}
+
 void TextEdit::selectAll()
 {
   stb_textedit_key(this, &stbState, STB_TEXTEDIT_K_LINESTART);
@@ -708,7 +716,9 @@ TextEdit* createTextEdit(int width)
   return widget;
 }
 
-SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* format, real minwidth)
+// SpinBox with editable text
+// - if stepdigits is true, up/down arrow keys will inc/dec the digit ahead of the cursor
+SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* format, real minwidth, bool stepdigits)
 {
   SvgG* spinBoxNode = static_cast<SvgG*>(widgetNode("#spinbox"));
   SvgG* textEditNode = static_cast<SvgG*>(spinBoxNode->selectFirst(".textbox"));
@@ -721,6 +731,22 @@ SpinBox* createTextSpinBox(real val, real inc, real min, real max, const char* f
     if(event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_RETURN) {
       spinBox->updateValueFromText(textEdit->text().c_str());
       textEdit->sdlEvent(gui, event);  // forward event to clear focus
+      return true;
+    }
+    else if(stepdigits && event->type == SDL_KEYDOWN &&
+        (event->key.keysym.sym == SDLK_UP || event->key.keysym.sym == SDLK_DOWN)) {
+      // find units of digit in front of cursor
+      std::string s = textEdit->text();
+      auto decimal = s.find_first_of('.');
+      int curpos = textEdit->getCursorPos();
+      if(decimal == std::string::npos) { decimal = s.size(); }
+      else if(curpos == decimal+1) { --curpos; }  // jump over decimal point
+      else if(curpos > decimal) { ++decimal; }
+      real step = std::pow(10., int(decimal) - curpos);
+      spinBox->updateValueFromText(s.c_str());  // ensure value matches string
+      spinBox->updateValue(spinBox->value() + (event->key.keysym.sym == SDLK_UP ? step : -step));
+      curpos += int(textEdit->text().size()) - int(s.size());  // maintain cursor pos if digit added or removed
+      textEdit->setCursorPos(curpos);  // need to restore cursor pos after updateValue()
       return true;
     }
     //else if(event->type == SvgGui::FOCUS_GAINED && event->user.code == SvgGui::REASON_PRESSED) {

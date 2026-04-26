@@ -18,6 +18,8 @@ public:
   bool isEditable() const override { return true; }
   void selectAll();
   void setEmptyText(const char* s) { emptyTextNode->setText(s); }
+  int getCursorPos() const { return cursorPos; }
+  void setCursorPos(int pos);
 
   static void stbLayout(StbTexteditRow* row, TextEdit* self, int start_i);
   static float stbCharWidth(TextEdit* self, int line_start_idx, int char_idx);
@@ -70,6 +72,6 @@ private:
 
 SvgNode* textEditInnerNode();
 TextEdit* createTextEdit(int width=0);
-SpinBox* createTextSpinBox(
-    real val=0, real inc=1, real min=-INFINITY, real max=INFINITY, const char* format="", real minwidth=0);
+SpinBox* createTextSpinBox(real val=0, real inc=1,
+    real min=-INFINITY, real max=INFINITY, const char* format="", real minwidth=0, bool stepdigits=false);
 ComboBox* createTextComboBox(const std::vector<std::string>& items);
