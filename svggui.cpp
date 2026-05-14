@@ -1222,14 +1222,14 @@ bool SvgGui::sdlWindowEvent(SDL_Event* event)
     break;  //return true;
   }
   case SDL_WINDOWEVENT_FOCUS_GAINED:
-#if !defined(NDEBUG) && defined(PLATFORM_LINUX)
+#if PLATFORM_LINUX && IS_DEBUG
     break;  // don't sent focus gained if we're not sending focus lost (see below)
 #endif
     if(fw)
       fw->sdlUserEvent(this, FOCUS_GAINED, REASON_WINDOW);
     break;
   case SDL_WINDOWEVENT_FOCUS_LOST:
-#if !defined(NDEBUG) && defined(PLATFORM_LINUX)
+#if PLATFORM_LINUX && IS_DEBUG
     break;  // this event can complicate debugging menus
 #endif
     closeMenus();  // close all menus
