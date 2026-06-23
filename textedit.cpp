@@ -293,7 +293,7 @@ void TextEdit::showMenu(SvgGui* gui)
   ctxPaste->setVisible(!isReadOnly() && SDL_HasClipboardText());
   Rect menubounds = contextMenu->node->bounds();
   real w = std::max(100.0, menubounds.width());
-  gui->showContextMenu(contextMenu, Point(b.center().x - w/2, b.bottom + 30), NULL, false);
+  gui->showContextMenu(contextMenu, Point(b.center().x - w/2, b.bottom + 30), this, false);
   // place menu above text if room
   real y = b.top - 10;  //- menubounds.height()
   if(y > 0) {
