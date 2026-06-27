@@ -7,12 +7,13 @@
 // must explicitly include SDL_config.h to support generated SDL_config.h on Linux
 #include "SDL_config.h"
 #include "SDL.h"
-#endif
 
 #ifdef main
 #undef main
 #else
 #define SDL_main main
+#endif
+
 #endif
 
 enum SvgGui_Events { SVGGUI_FINGERCANCEL=0x9F01, SVGGUI_KEYBOARD_HIDDEN, SVGGUI_IME_TEXT_UPDATE };
