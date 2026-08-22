@@ -1037,11 +1037,9 @@ extern int SDL_PushEvent(SDL_Event* event);
 extern int SDL_PeepEvents(SDL_Event* events, int numevents, SDL_eventaction action, Uint32 minType, Uint32 maxType);
 
 // more for Write
-extern Uint32 SDL_RegisterEvents(int numevents);  // not sure if we want to keep this, or just for transition
-extern const char* SDL_GetKeyName(SDL_Keycode key);
-//extern void SDL_GL_SwapWindow(SDL_Window* win);
+extern void SDL_GL_SwapWindow(SDL_Window* win);
 //extern void SDL_GL_GetDrawableSize(SDL_Window * window, int *w, int *h);
-//extern int SDL_GetDisplayBounds(int displayIndex, SDL_Rect* rect);
+extern int SDL_GetDisplayBounds(int displayIndex, SDL_Rect* rect);
 //extern int SDL_GetWindowDisplayIndex(SDL_Window * window);
 
 /* Ends C function definitions when using C++ */
