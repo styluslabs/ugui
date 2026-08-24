@@ -4,11 +4,13 @@
 #ifdef SVGGUI_NO_SDL
 #include "svggui_sdl.h"
 
+#ifdef __cplusplus
 #include <memory>
 class Image;
 struct PlatformCursor { virtual ~PlatformCursor() = 0; };
 std::unique_ptr<PlatformCursor> platformCreateCursor(const Image* image, int hot_x, int hot_y);
 void platformSetCursor(const PlatformCursor* cursor);
+#endif
 
 #else
 // must explicitly include SDL_config.h to support generated SDL_config.h on Linux
