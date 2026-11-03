@@ -7,6 +7,7 @@
 #ifdef __cplusplus
 #include <memory>
 #include <string>
+#include <functional>
 class Image;
 
 // Platform layer API - implemented by single-file platform layers (linuxmain.cpp, winmain.cpp, etc.)
@@ -48,6 +49,16 @@ void platformSetFullscreen(bool enable);
 // for errors before GUI is available
 void platformMessageBox(std::string title, std::string msg);
 bool platformOpenURL(const char* url);
+void platformKeepScreenOn(bool on);
+// run fn on the thread running appMain() (for calls from other threads, e.g. Android UI thread)
+void platformRunOnAppThread(std::function<void()> fn);
+
+#ifdef __ANDROID__
+// SDL-compatible accessors (androidApp.cpp); SDL_AndroidGetActivity returns local ref, caller must delete
+void* SDL_AndroidGetJNIEnv();
+void* SDL_AndroidGetActivity();
+const char* SDL_AndroidGetExternalStoragePath();
+#endif
 #endif
 
 #else
