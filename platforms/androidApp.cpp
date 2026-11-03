@@ -790,6 +790,8 @@ void platformKeepScreenOn(bool on)
   if(jni) { jni->CallVoidMethod(activityRef, keepScreenOnMID, on); }
 }
 
+void* platformGetNativeWindow() { return sdlWin.nativeWin; }
+
 void android_sendToBack()
 {
   JniCall jni;

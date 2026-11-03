@@ -10,7 +10,7 @@
 #include <functional>
 class Image;
 
-// Platform layer API - implemented by single-file platform layers (linuxmain.cpp, winmain.cpp, etc.)
+// Platform layer API - implemented by single-file platform layers (linuxmain.cpp, platforms/winmain.cpp, etc.)
 // The application defines appMain(); platform owns the real OS entry point and calls appMain()
 int appMain(int argc, char* argv[]);
 
@@ -50,6 +50,9 @@ void platformSetFullscreen(bool enable);
 void platformMessageBox(std::string title, std::string msg);
 bool platformOpenURL(const char* url);
 void platformKeepScreenOn(bool on);
+// native window: HWND (Windows), X11 Window cast to void* (Linux), UIView* (iOS), ANativeWindow* (Android; NULL
+//  when no surface, changes when surface is recreated); for app-specific platform code, e.g. Wintab on Windows
+void* platformGetNativeWindow();
 // run fn on the thread running appMain() (for calls from other threads, e.g. Android UI thread)
 void platformRunOnAppThread(std::function<void()> fn);
 
