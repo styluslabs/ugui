@@ -548,11 +548,33 @@ class DummyEdit extends View
   @Override
   public boolean onCheckIsTextEditor() { return true; }
 
-  @Override
-  public boolean onKeyDown(int keyCode, KeyEvent event) { return mEditText.onKeyDown(keyCode, event); }
+  // keys that don't edit text (enter, escape, tab, ctrl shortcuts) go to app as key events - otherwise
+  //  EditText would, e.g., insert newline for enter (from hardware keyboard or IME sendKeyEvent())
+  static boolean isAppKey(int keyCode, KeyEvent event) {
+    switch(keyCode) {
+    case KeyEvent.KEYCODE_ENTER:
+    case KeyEvent.KEYCODE_NUMPAD_ENTER:
+    case KeyEvent.KEYCODE_ESCAPE:
+    case KeyEvent.KEYCODE_TAB:
+    case KeyEvent.KEYCODE_CTRL_LEFT:
+    case KeyEvent.KEYCODE_CTRL_RIGHT:
+      return true;
+    default:
+      return event.isCtrlPressed();
+    }
+  }
 
   @Override
-  public boolean onKeyUp(int keyCode, KeyEvent event) { return mEditText.onKeyUp(keyCode, event); }
+  public boolean onKeyDown(int keyCode, KeyEvent event) {
+    if(isAppKey(keyCode, event)) { MainLib.keyEvent(keyCode, 1); return true; }
+    return mEditText.onKeyDown(keyCode, event);
+  }
+
+  @Override
+  public boolean onKeyUp(int keyCode, KeyEvent event) {
+    if(isAppKey(keyCode, event)) { MainLib.keyEvent(keyCode, -1); return true; }
+    return mEditText.onKeyUp(keyCode, event);
+  }
 
   public void onEditorAction(int actionCode) { mEditText.onEditorAction(actionCode); }
 
