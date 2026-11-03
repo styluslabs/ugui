@@ -1040,7 +1040,7 @@ extern int SDL_PeepEvents(SDL_Event* events, int numevents, SDL_eventaction acti
 extern void SDL_GL_SwapWindow(SDL_Window* win);
 //extern void SDL_GL_GetDrawableSize(SDL_Window * window, int *w, int *h);
 extern int SDL_GetDisplayBounds(int displayIndex, SDL_Rect* rect);
-//extern int SDL_GetWindowDisplayIndex(SDL_Window * window);
+extern int SDL_GetWindowDisplayIndex(SDL_Window* window);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus
