@@ -1861,7 +1861,7 @@ Rect SvgGui::layoutAndDraw(Painter* painter)
   painter->scale(paintScale);  // beginFrame resets Painter state
   painter->setsRGBAdjAlpha(true);
 
-  // Painter aligns clip rect w/ pixel boundaries, but we want to do it here to get basis for dirty rect
+  // nanovg rounds clip rect to nearest pixel boundaries, but we align it here (outward) to get basis for dirty rect
   Rect dirtypx = Rect(dirty).pad(1).scale(paintScale).round().rectIntersect(painter->deviceRect);
   Rect cliprect = Rect(debugDirty || fullRedraw ? painter->deviceRect : dirtypx).scale(1/paintScale);
   if(!painter->usesGPU())
