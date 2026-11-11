@@ -1502,5 +1502,13 @@ bool platformOpenURL(const char* url)
 
 int main(int argc, char* argv[])
 {
+  // argv[0] may be relative, a symlink, or just the name if found via PATH; app expects actual path (e.g. to
+  //  find resources next to executable), as SDL_GetBasePath() provided
+  static char exepath[PATH_MAX];
+  ssize_t len = readlink("/proc/self/exe", exepath, sizeof(exepath) - 1);
+  if(argc > 0 && len > 0) {
+    exepath[len] = '\0';
+    argv[0] = exepath;
+  }
   return appMain(argc, argv);
 }
