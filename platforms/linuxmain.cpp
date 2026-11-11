@@ -197,7 +197,29 @@ void SDL_StopTextInput()
 }
 
 void SDL_RaiseWindow(SDL_Window* window) {}
-void SDL_SetWindowTitle(SDL_Window* win, const char* title) {}
+// sets WM_NAME, WM_ICON_NAME (compound text) and _NET_WM_NAME, _NET_WM_ICON_NAME (UTF-8, used by modern WMs)
+static void setXWindowTitle(Display* dpy, Window xwin, const char* title)
+{
+  XTextProperty textprop;
+  if(Xutf8TextListToTextProperty(dpy, (char**)&title, 1, XStdICCTextStyle, &textprop) >= Success) {
+    XSetWMName(dpy, xwin, &textprop);
+    XSetWMIconName(dpy, xwin, &textprop);
+    XFree(textprop.value);
+  }
+  Atom utf8 = XInternAtom(dpy, "UTF8_STRING", False);
+  int len = int(strlen(title));
+  XChangeProperty(dpy, xwin, XInternAtom(dpy, "_NET_WM_NAME", False), utf8, 8, PropModeReplace,
+      (const unsigned char*)title, len);
+  XChangeProperty(dpy, xwin, XInternAtom(dpy, "_NET_WM_ICON_NAME", False), utf8, 8, PropModeReplace,
+      (const unsigned char*)title, len);
+}
+
+void SDL_SetWindowTitle(SDL_Window* win, const char* title)
+{
+  if(!xContext.dpy || !xContext.win) { return; }
+  setXWindowTitle(xContext.dpy, xContext.win, title);
+  XFlush(xContext.dpy);
+}
 void SDL_GetWindowSize(SDL_Window* win, int* w, int* h)
 {
   if(w) { *w = xContext.width; }
@@ -1325,8 +1347,9 @@ PlatformWindow* platformInit(PlatformConfig& cfg)
   XChangeProperty(xDpy, xWin, XInternAtom(xDpy, "_NET_WM_WINDOW_TYPE", False),
       XA_ATOM, 32, PropModeReplace, (unsigned char*)&NET_WM_WINDOW_TYPE_NORMAL, 1);
 
-  // set WM_NAME (window title)
-  XSetStandardProperties(xDpy, xWin, wintitle, wintitle, None, NULL, 0, &winSize);
+  // window title; WM_NORMAL_HINTS (position and size)
+  setXWindowTitle(xDpy, xWin, wintitle);
+  XSetWMNormalHints(xDpy, xWin, &winSize);
   // no _NET_WM_ICON: if WM_CLASS is set correctly, launcher icon specified in .desktop file is used
 
   WinStateAtoms.NET_WM_STATE = XInternAtom(xDpy, "_NET_WM_STATE", False);
