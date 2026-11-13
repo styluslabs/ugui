@@ -7,7 +7,16 @@
 //   (so it is an optional dependency) instead of linking it
 // - http_unet.cpp: plain HTTP only (no HTTPS) w/ ulib/unet.h sockets - fallback if platform backend is not
 //   available (e.g. libcurl not installed) and for testing; defines createUnetHttpClient() only
-// - TODO: WinHTTP (Windows), NSURLSession (iOS, macOS), Java (Android), fetch (Emscripten)
+// - TODO: remaining platform backends (until then, apps can fall back to http_unet.cpp, i.e. plain HTTP only):
+//  - http_winhttp.cpp (Windows): WinHTTP w/ WINHTTP_FLAG_ASYNC or blocking calls on worker threads; HTTP/2 via
+//   WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL (Win 10 1607+), decompression via WINHTTP_OPTION_DECOMPRESSION (Win 8.1+);
+//   status from WINHTTP_QUERY_STATUS_CODE, headers from WINHTTP_QUERY_RAW_HEADERS_CRLF
+//  - http_apple.mm (iOS, macOS): NSURLSession dataTaskWithRequest; NSHTTPURLResponse statusCode and
+//   allHeaderFields; Options.diskCache -> NSURLCache; Options.cookies -> HTTPShouldSetCookies/ephemeral config
+//  - http_android.cpp + Java class (Android): HttpURLConnection on a Java thread pool (ExecutorService), called
+//   via JNI (SDL_AndroidGetJNIEnv()); read getErrorStream() for status >= 400 so body is returned
+//  - fetch (Emscripten): emscripten_fetch w/ EMSCRIPTEN_FETCH_LOAD_TO_MEMORY
+//  - see tangram-es platforms (styluslabs/tangram-ng) for existing NSURLSession and OkHttp (Android) implementations
 // Usage notes:
 // - callback is called exactly once for each request, on a thread owned by the client (never from within
 //  request() or cancel()); it may call request() and cancel() but must not destroy the client
