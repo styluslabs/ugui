@@ -10,11 +10,13 @@
 // - TODO: remaining platform backends (until then, apps can fall back to http_unet.cpp, i.e. plain HTTP only):
 //  - http_winhttp.cpp (Windows): WinHTTP w/ WINHTTP_FLAG_ASYNC or blocking calls on worker threads; HTTP/2 via
 //   WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL (Win 10 1607+), decompression via WINHTTP_OPTION_DECOMPRESSION (Win 8.1+);
-//   status from WINHTTP_QUERY_STATUS_CODE, headers from WINHTTP_QUERY_RAW_HEADERS_CRLF
+//   status from WINHTTP_QUERY_STATUS_CODE, headers from WINHTTP_QUERY_RAW_HEADERS_CRLF; user/password via
+//   WinHttpSetCredentials w/ WINHTTP_AUTH_SCHEME_BASIC (or just set Authorization header)
 //  - http_apple.mm (iOS, macOS): NSURLSession dataTaskWithRequest; NSHTTPURLResponse statusCode and
 //   allHeaderFields; Options.diskCache -> NSURLCache; Options.cookies -> HTTPShouldSetCookies/ephemeral config
 //  - http_android.cpp + Java class (Android): HttpURLConnection on a Java thread pool (ExecutorService), called
-//   via JNI (SDL_AndroidGetJNIEnv()); read getErrorStream() for status >= 400 so body is returned
+//   via JNI (SDL_AndroidGetJNIEnv()); read getErrorStream() for status >= 400 so body is returned;
+//   user/password: set Authorization header
 //  - fetch (Emscripten): emscripten_fetch w/ EMSCRIPTEN_FETCH_LOAD_TO_MEMORY
 //  - see tangram-es platforms (styluslabs/tangram-ng) for existing NSURLSession and OkHttp (Android) implementations
 // Usage notes:
@@ -22,7 +24,9 @@
 //  request() or cancel()); it may call request() and cancel() but must not destroy the client
 // - all responses that are received (any status code) are returned w/ status and body; status is 0 only if no
 //  response was received (connection failed, timeout, cancelled, etc.), in which case error is set
-// - for credentials, send Authorization header (credentials in URL are not supported by all backends)
+// - for HTTP Basic auth, set HttpRequest user and password (sent w/ request, w/o waiting for 401 challenge) rather
+//  than an Authorization header (some platform stacks, e.g. NSURLSession, reserve Authorization header);
+//  credentials in URL are not supported by all backends
 // - unet backend requires unet_init() to have been called (as the app should already do if it uses unet)
 
 #include <string>
@@ -39,6 +43,7 @@ struct HttpRequest
   std::string headers;  // "Name: value" lines separated by "\r\n" (or "\n")
   std::string body;
   double timeout = 0;  // seconds (for entire request); 0 to use client default
+  std::string user, password;  // HTTP Basic auth (if user not empty); not sent to other hosts on redirect
 
   HttpRequest(std::string _url = "", std::string _headers = "", std::string _body = "")
       : url(std::move(_url)), headers(std::move(_headers)), body(std::move(_body)) {}

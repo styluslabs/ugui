@@ -5,6 +5,7 @@
 
 #include "platformhttp.h"
 #include "ulib/unet.h"
+#include "ulib/stringutil.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -204,6 +205,8 @@ HttpResponse UnetHttpClient::perform(Task* t)
   std::string msg = method + " " + path + " HTTP/1.1\r\nHost: " + hosthdr + "\r\nConnection: close\r\n";
   if(!opts.userAgent.empty())
     msg += "User-Agent: " + opts.userAgent + "\r\n";
+  if(!req.user.empty())
+    msg += "Authorization: Basic " + base64_encode(req.user + ":" + req.password) + "\r\n";
   if(!req.body.empty() || method == "POST" || method == "PUT")
     msg += "Content-Length: " + std::to_string(req.body.size()) + "\r\n";
   for(auto& kv : httpParseHeaders(req.headers))

@@ -243,6 +243,13 @@ bool CurlHttpClient::start(Task* t)
     api->curl_easy_setopt(e, CURLOPT_SHARE, share);
   if(opts.cookies)
     api->curl_easy_setopt(e, CURLOPT_COOKIEFILE, "");  // enable in-memory cookie engine
+  if(!req.user.empty()) {
+    // CURLAUTH_BASIC alone means credentials are sent w/ first request; curl doesn't send them to other hosts
+    //  on redirect (unless CURLOPT_UNRESTRICTED_AUTH)
+    api->curl_easy_setopt(e, CURLOPT_HTTPAUTH, long(CURLAUTH_BASIC));
+    api->curl_easy_setopt(e, CURLOPT_USERNAME, req.user.c_str());
+    api->curl_easy_setopt(e, CURLOPT_PASSWORD, req.password.c_str());
+  }
 
   std::string method = req.method.empty() ? (req.body.empty() ? "GET" : "POST") : req.method;
   if(method == "GET")
