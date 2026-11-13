@@ -17,6 +17,7 @@ SOURCES = \
   svggui.cpp \
   widgets.cpp \
   textedit.cpp \
+  uidriver.cpp \
   example/example.cpp
 
 # if source contains ../ paths, this should be the <current> directory; if ../../, <parent>/<current>; etc.

@@ -61,6 +61,8 @@ public:
   bool isChecked() const { return m_checked; }  // pick one...
   void setChecked(bool checked = true);
 
+  const char* typeName() const override { return "button"; }
+
   std::function<void()> onPressed;
   std::function<void()> onClicked;
   Menu* mMenu;
@@ -88,6 +90,7 @@ public:
   void addSeparator();
   void setAlign(int align);
   Point calcOffset(const Rect& pb) const override;
+  const char* typeName() const override { return "menu"; }
 
   bool autoClose = false;
 };
@@ -101,12 +104,14 @@ public:
 
   // addWidget(createSeparator())?  createTBSeparator?  createVerticalSeparator?
   Widget* addSeparator();
+  const char* typeName() const override { return "toolbar"; }
 };
 
 class CheckBox : public Button
 {
 public:
   CheckBox(SvgNode* n, bool _checked);
+  const char* typeName() const override { return "checkbox"; }
 
   std::function<void(bool)> onToggled;
 };
@@ -117,7 +122,8 @@ public:
   TextBox(SvgNode* n);
   void setText(const char* s) override { textNode->setText(s); }
   virtual bool isEditable() const { return false; }
-  virtual std::string text() const { return textNode->text(); }
+  virtual std::string text() const { return textNode ? textNode->text() : std::string(); }
+  const char* typeName() const override { return "textbox"; }
 
 protected:
   SvgText* textNode;
@@ -146,6 +152,7 @@ public:
   void updateIndex(int idx);
   void updateFromText(const char* s);
   void addItems(const std::vector<std::string>& _items);
+  const char* typeName() const override { return "combobox"; }
 
   std::function<void(const char*)> onChanged;
 
@@ -168,6 +175,7 @@ public:
   void updateValue(real val);
   bool updateValueFromText(const char* s);
   void setLimits(real min, real max) { m_min = min; m_max = max; }
+  const char* typeName() const override { return "spinbox"; }
 
   std::function<real(int nsteps)> onStep;
   std::function<void(real value)> onValueChanged;
@@ -192,6 +200,7 @@ public:
   void setValue(real value);
   void updateValue(real value);
   real value() const { return sliderPos; }
+  const char* typeName() const override { return "slider"; }
 
   std::function<void(real value)> onValueChanged;
 
@@ -267,6 +276,7 @@ public:
 
   void finish(int res);
   Button* addButton(const char* title, const std::function<void()>& callback);
+  const char* typeName() const override { return "dialog"; }
 
   std::function<void(int)> onFinished;
   enum Result_t {CANCELLED=0, ACCEPTED=1};

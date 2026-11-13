@@ -1047,6 +1047,7 @@ void SvgGui::closeWindow(Window* win)
 
 void SvgGui::showModal(Window* modal, Window* parent)
 {
+  ++modalShowCount;
   showWindow(modal, parent, true);
 }
 

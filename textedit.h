@@ -14,6 +14,7 @@ public:
   TextEdit(SvgNode* n);
   void setText(const char* s) override;
   std::string text() const override;
+  const char* typeName() const override { return "textedit"; }
   const std::u32string& u32string() const { return currText; }
   bool isEditable() const override { return true; }
   void selectAll();

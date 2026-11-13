@@ -52,6 +52,8 @@ public:
   void removeFromParent();
   enum WidgetClass_t { WidgetClass, AbsPosWidgetClass, WindowClass };
   virtual WidgetClass_t widgetClass() const { return WidgetClass; }
+  // widget type for debugging and UI automation (see uidriver.h), since RTTI may be disabled
+  virtual const char* typeName() const { return "widget"; }
   bool isDescendantOf(Widget* parent) const;
   bool isEmpty() const { return !node->asContainerNode() || node->asContainerNode()->children().empty(); }
 
@@ -138,6 +140,7 @@ public:
   bool isModal() const { return mIsModal; }
   void setModal(bool modal) { mIsModal = modal; }
   WidgetClass_t widgetClass() const override { return WindowClass; }
+  const char* typeName() const override { return "window"; }
   void setWindowXmlClass(const char* xmlcls);
   // may go away as we flesh out event and callback architecture
   SvgGui* gui() { return svgGui; }
@@ -231,6 +234,7 @@ public:
   static Widget* findNextFocusable(Widget* parent, Widget* curr, bool reverse);
 
   std::vector<Window*> windows;
+  unsigned int modalShowCount = 0;  // incremented by showModal() (to identify each showing of a modal)
 
   // input handling
   Widget* pressedWidget = NULL;
