@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <mutex>
 #include <functional>
 
 class UiDriver
@@ -44,6 +45,9 @@ public:
   // actions; return false (and add to errors) on failure; target can be query string or Widget*
   bool click(Widget* w);
   bool click(const std::string& query) { return click(findOrErr(query)); }
+  // mouse motion to center of widget (click() doesn't send motion, since hover can change UI)
+  bool hover(Widget* w);
+  bool hover(const std::string& query) { return hover(findOrErr(query)); }
   // focus (by clicking) and type text, replacing existing text if replace = true
   bool type(Widget* w, const std::string& text, bool replace = true);
   bool type(const std::string& query, const std::string& text, bool replace = true)
@@ -62,14 +66,27 @@ public:
   size_t pendingSteps() const { return steps.size(); }
   void poll();
 
-  double modalTimeout = 5;  // seconds
+  double modalTimeout = 5;  // seconds; <= 0 to disable watchdog
   std::vector<std::string> errors;
   int nModals = 0;  // number of modals seen by poll()
+
+  // text command interface, e.g. for driving app from a shell (see Write --automation); queueCommand() can be
+  //  called from any thread (wakes event loop); commands run in order from poll(); reply to each is passed to
+  //  replyFn: "> command" line, "ok" or "error: ...", optional output (e.g. dump of top window), then an empty
+  //  line; replies to actions are sent after the events generated have been processed; see help command
+  void queueCommand(const std::string& line);
+  std::function<void(const std::string& reply)> replyFn;
+  std::function<void()> onQuit;
+  bool autoDump = true;  // dump top window after each action
 
 private:
   Widget* findOrErr(const std::string& query);
   bool checkTarget(Widget* w, Point* p);
   void pushMouse(Uint32 type, Window* win, Point p);
+
+  void pollCommands();
+  void runCommand(const std::string& line);
+  void reply(const std::string& status, const std::string& output = "");
 
   struct ModalHandler { std::string title; std::function<void(UiDriver&, Window*)> fn; };
   SvgGui* gui;
@@ -80,4 +97,13 @@ private:
   bool currModalHandled = false;
   Timestamp modalSince = 0;
   bool inPoll = false;
+
+  // command state
+  std::mutex cmdMutex;
+  std::deque<std::string> cmdQueue;  // guarded by cmdMutex
+  std::string currCmd;
+  bool replyPending = false;  // reply to currCmd (action) to be sent on next poll
+  std::string waitQuery;  // wait / waitgone
+  bool waitGone = false;
+  Timestamp waitUntil = 0;  // also for sleep
 };

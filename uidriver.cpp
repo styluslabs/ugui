@@ -28,7 +28,8 @@ static std::string collapseSpace(const std::string& s)
 static void gatherText(const SvgNode* node, bool crossWidgets, bool hidden, bool isRoot, std::string& out)
 {
   if(!hidden && !nodeDisplayed(node)) return;
-  if(!isRoot && !crossWidgets && node->hasExt()) return;
+  if(!isRoot && node->hasExt() && (!crossWidgets
+      || strcmp(static_cast<const Widget*>(node->ext(false))->typeName(), "menu") == 0)) return;
   if(node->type() == SvgNode::TEXT) {
     std::string t = static_cast<const SvgText*>(node)->text();
     if(!t.empty())
@@ -316,9 +317,18 @@ bool UiDriver::click(Widget* w)
   Point p;
   if(!checkTarget(w, &p)) return false;
   Window* win = w->window();
-  pushMouse(SDL_MOUSEMOTION, win, p);
+  // no motion event first, since hover can change UI (e.g. open submenu over target) - like a tap on touchscreen
   pushMouse(SDL_MOUSEBUTTONDOWN, win, p);
   pushMouse(SDL_MOUSEBUTTONUP, win, p);
+  PLATFORM_WakeEventLoop();
+  return true;
+}
+
+bool UiDriver::hover(Widget* w)
+{
+  Point p;
+  if(!checkTarget(w, &p)) return false;
+  pushMouse(SDL_MOUSEMOTION, w->window(), p);
   PLATFORM_WakeEventLoop();
   return true;
 }
@@ -398,12 +408,214 @@ void UiDriver::poll()
       modalSince = mSecSinceEpoch();
       if(h.fn) h.fn(*this, m);
     }
-    else if(mSecSinceEpoch() - modalSince > modalTimeout*1000) {
+    else if(modalTimeout > 0 && mSecSinceEpoch() - modalSince > modalTimeout*1000) {
       errors.push_back(fstring("%s modal %s closed by UiDriver after %.1f s:\n",
           currModalHandled ? "still open:" : "unexpected", quoted(title).c_str(), modalTimeout) + dump(m, 0));
       gui->closeWindow(m);
       currModal = NULL;
     }
   }
+  if(steps.empty())
+    pollCommands();
   inPoll = false;
+}
+
+// command interface
+
+void UiDriver::queueCommand(const std::string& line)
+{
+  {
+    std::lock_guard<std::mutex> lock(cmdMutex);
+    cmdQueue.push_back(line);
+  }
+  PLATFORM_WakeEventLoop();
+}
+
+void UiDriver::reply(const std::string& status, const std::string& output)
+{
+  if(!replyFn) return;
+  std::string r = "> " + currCmd + "\n" + status + "\n" + output;
+  if(!r.empty() && r.back() != '\n') r.push_back('\n');
+  replyFn(r + "\n");
+}
+
+void UiDriver::pollCommands()
+{
+  if(replyPending) {
+    // action's events have been processed
+    replyPending = false;
+    if(!errors.empty()) {
+      reply("error: " + joinStr(errors, "\n"));
+      errors.clear();
+    }
+    else
+      reply("ok", autoDump ? dump(topWindow(), 0) : "");
+    return;
+  }
+  if(waitUntil) {
+    Timestamp now = mSecSinceEpoch();
+    if(!waitQuery.empty()) {
+      bool found = find(waitQuery) != NULL;
+      if(found != waitGone) {
+        waitUntil = 0;
+        waitQuery.clear();
+        reply("ok", autoDump ? dump(topWindow(), 0) : "");
+      }
+      else if(now > waitUntil) {
+        waitUntil = 0;
+        waitQuery.clear();
+        reply("error: timed out", dump(topWindow(), 0));
+      }
+    }
+    else if(now > waitUntil) {
+      waitUntil = 0;
+      reply("ok");
+    }
+    return;
+  }
+  std::string line;
+  {
+    std::lock_guard<std::mutex> lock(cmdMutex);
+    if(cmdQueue.empty()) return;
+    line = cmdQueue.front();
+    cmdQueue.pop_front();
+  }
+  runCommand(line);
+}
+
+// split on spaces; double quotes group (w/ backslash escapes inside quotes)
+static std::vector<std::string> splitArgs(const std::string& line)
+{
+  std::vector<std::string> args;
+  std::string curr;
+  bool inArg = false, quoted = false;
+  for(size_t ii = 0; ii < line.size(); ++ii) {
+    char c = line[ii];
+    if(quoted) {
+      if(c == '\\' && ii + 1 < line.size()) curr.push_back(line[++ii]);
+      else if(c == '"') quoted = false;
+      else curr.push_back(c);
+    }
+    else if(c == '"') { quoted = true; inArg = true; }
+    else if(c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      if(inArg) args.push_back(curr);
+      curr.clear();
+      inArg = false;
+    }
+    else { curr.push_back(c); inArg = true; }
+  }
+  if(inArg) args.push_back(curr);
+  return args;
+}
+
+static SDL_Keycode parseKey(std::string name)
+{
+  name = toLower(name);
+  static const std::pair<const char*, SDL_Keycode> keys[] = {
+    {"return", SDLK_RETURN}, {"enter", SDLK_RETURN}, {"escape", SDLK_ESCAPE}, {"esc", SDLK_ESCAPE},
+    {"tab", SDLK_TAB}, {"backspace", SDLK_BACKSPACE}, {"delete", SDLK_DELETE}, {"space", SDLK_SPACE},
+    {"left", SDLK_LEFT}, {"right", SDLK_RIGHT}, {"up", SDLK_UP}, {"down", SDLK_DOWN}, {"home", SDLK_HOME},
+    {"end", SDLK_END}, {"pageup", SDLK_PAGEUP}, {"pagedown", SDLK_PAGEDOWN}};
+  for(auto& k : keys) {
+    if(name == k.first) return k.second;
+  }
+  if(name.size() == 1 && (unsigned char)name[0] < 0x80) return SDL_Keycode(name[0]);
+  return SDLK_UNKNOWN;
+}
+
+static const char* commandHelp =
+    "commands (quote args w/ spaces; queries: #id, .class, CSS selector, type:Text (e.g. button:OK), text:Substring,\n"
+    "  field:Label):\n"
+    "  dump [all] [bounds] [hidden] - top window (or all windows)\n"
+    "  find <query> - dump of matching widget\n"
+    "  click <query> - press and release (w/o motion, like a tap)\n"
+    "  hover <query> - mouse motion to widget\n"
+    "  type <query> <text> [append] - replaces text unless append\n"
+    "  key <name> [ctrl] [shift] [alt] [gui] - e.g. key return; key a ctrl\n"
+    "  wait <query> [secs] - until widget is shown (default 10 s); waitgone <query> [secs]\n"
+    "  sleep <secs>\n"
+    "  set autodump on|off - dump top window after actions (default on)\n"
+    "  set timeout <secs> - close modal not handled for this long (<= 0: never)\n"
+    "  quit\n";
+
+void UiDriver::runCommand(const std::string& line)
+{
+  currCmd = line;
+  while(!currCmd.empty() && (currCmd.back() == '\n' || currCmd.back() == '\r'))
+    currCmd.pop_back();
+  std::vector<std::string> args = splitArgs(line);
+  if(args.empty()) return;  // ignore blank lines
+  std::string cmd = toLower(args[0]);
+  size_t nargs = args.size() - 1;
+  errors.clear();
+  auto actionDone = [&](bool ok) {
+    if(ok)
+      replyPending = true;  // reply after events are processed
+    else {
+      reply("error: " + joinStr(errors, "\n"));
+      errors.clear();
+    }
+  };
+  if(cmd == "help")
+    reply("ok", commandHelp);
+  else if(cmd == "dump") {
+    int flags = 0;
+    bool all = false;
+    for(size_t ii = 1; ii < args.size(); ++ii) {
+      if(args[ii] == "all") all = true;
+      else if(args[ii] == "bounds") flags |= DUMP_BOUNDS;
+      else if(args[ii] == "hidden") flags |= DUMP_HIDDEN;
+    }
+    reply("ok", all ? dumpAll(flags) : dump(topWindow(), flags));
+  }
+  else if(cmd == "find" && nargs == 1) {
+    Widget* w = find(args[1]);
+    if(w) reply("ok", dump(w, DUMP_BOUNDS));
+    else reply("error: not found");
+  }
+  else if(cmd == "click" && nargs == 1)
+    actionDone(click(args[1]));
+  else if(cmd == "hover" && nargs == 1)
+    actionDone(hover(args[1]));
+  else if(cmd == "type" && (nargs == 2 || (nargs == 3 && args[3] == "append")))
+    actionDone(type(args[1], args[2], nargs == 2));
+  else if(cmd == "key" && nargs >= 1) {
+    SDL_Keycode sym = parseKey(args[1]);
+    Uint16 mods = 0;
+    for(size_t ii = 2; ii < args.size(); ++ii) {
+      std::string m = toLower(args[ii]);
+      if(m == "ctrl") mods |= KMOD_CTRL;
+      else if(m == "shift") mods |= KMOD_SHIFT;
+      else if(m == "alt") mods |= KMOD_ALT;
+      else if(m == "gui") mods |= KMOD_GUI;
+      else sym = SDLK_UNKNOWN;
+    }
+    if(sym == SDLK_UNKNOWN)
+      reply("error: unknown key or modifier");
+    else
+      actionDone(key(sym, mods));
+  }
+  else if((cmd == "wait" || cmd == "waitgone") && (nargs == 1 || nargs == 2)) {
+    waitQuery = args[1];
+    waitGone = cmd == "waitgone";
+    waitUntil = mSecSinceEpoch() + Timestamp(1000*(nargs == 2 ? atof(args[2].c_str()) : 10.0));
+  }
+  else if(cmd == "sleep" && nargs == 1) {
+    waitQuery.clear();
+    waitUntil = mSecSinceEpoch() + Timestamp(1000*atof(args[1].c_str()));
+  }
+  else if(cmd == "set" && nargs == 2 && args[1] == "autodump") {
+    autoDump = args[2] == "on";
+    reply("ok");
+  }
+  else if(cmd == "set" && nargs == 2 && args[1] == "timeout") {
+    modalTimeout = atof(args[2].c_str());
+    reply("ok");
+  }
+  else if(cmd == "quit") {
+    reply("ok");
+    if(onQuit) onQuit();
+  }
+  else
+    reply("error: unknown command or wrong arguments (see help)");
 }
