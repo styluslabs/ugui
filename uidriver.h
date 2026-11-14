@@ -25,8 +25,9 @@ public:
 
   // dump
   enum DumpFlags { DUMP_BOUNDS = 1, DUMP_HIDDEN = 2 };
-  // one line per widget: type[#id] "text" [value=...] [checked] [disabled] [focused] [x,y wxh]; generic
-  //  container widgets w/o text or id are omitted (their children are shown at the same level)
+  // one line per widget: type[#id] "text" [value=...] [checked] [disabled] [focused] [hidden] [hovered]
+  //  [tooltip="..."] [modal] [x,y wxh]; generic container widgets w/o text or id are omitted (their children are
+  //  shown at the same level); hovered marks the deepest listed widget under the pointer (not its ancestors)
   std::string dump(Widget* root, int flags = DUMP_BOUNDS) const;
   // all windows (topmost modal last)
   std::string dumpAll(int flags = DUMP_BOUNDS) const;

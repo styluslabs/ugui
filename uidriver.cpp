@@ -28,6 +28,7 @@ static std::string collapseSpace(const std::string& s)
 static void gatherText(const SvgNode* node, bool crossWidgets, bool hidden, bool isRoot, std::string& out)
 {
   if(!hidden && !nodeDisplayed(node)) return;
+  if(!isRoot && node->hasClass("tooltip")) return;  // reported separately (see visibleTooltip())
   if(!isRoot && node->hasExt() && (!crossWidgets
       || strcmp(static_cast<const Widget*>(node->ext(false))->typeName(), "menu") == 0)) return;
   if(node->type() == SvgNode::TEXT) {
@@ -40,6 +41,25 @@ static void gatherText(const SvgNode* node, bool crossWidgets, bool hidden, bool
     for(const SvgNode* child : c->children())
       gatherText(child, crossWidgets, hidden, false, out);
   }
+}
+
+// text of visible tooltip (added by setupTooltip()) of widget w/ root node; tooltips of descendant widgets excluded
+static std::string visibleTooltip(const SvgNode* node, bool isRoot = true)
+{
+  if(!nodeDisplayed(node)) return "";
+  if(!isRoot && node->hasClass("tooltip")) {
+    std::string out;
+    gatherText(node, true, false, true, out);
+    return collapseSpace(out);
+  }
+  if(!isRoot && node->hasExt()) return "";
+  if(const SvgContainerNode* c = node->asContainerNode()) {
+    for(const SvgNode* child : c->children()) {
+      std::string t = visibleTooltip(child, false);
+      if(!t.empty()) return t;
+    }
+  }
+  return "";
 }
 
 static bool isTypeAny(const Widget* w, std::initializer_list<const char*> types)
@@ -100,14 +120,14 @@ static std::string quoted(const std::string& s)
   return res + "\"";
 }
 
-static void dumpNode(const SvgNode* node, int depth, int flags, std::string& out)
+static void dumpNode(const SvgNode* node, int depth, int flags, const Widget* hovered, std::string& out)
 {
   bool hidden = !nodeDisplayed(node);
   if(hidden && !(flags & UiDriver::DUMP_HIDDEN)) return;
   if(!node->hasExt()) {
     if(const SvgContainerNode* c = node->asContainerNode()) {
       for(const SvgNode* child : c->children())
-        dumpNode(child, depth, flags, out);
+        dumpNode(child, depth, flags, hovered, out);
     }
     return;
   }
@@ -131,6 +151,11 @@ static void dumpNode(const SvgNode* node, int depth, int flags, std::string& out
     Window* win = w->window();
     if(win && win->focusedWidget == w) line += " focused";
     if(hidden) line += " hidden";
+    // hover goes to deepest widget under pointer, i.e. maybe a child of a leaf widget; ancestors not marked
+    if(hovered && (hovered == w || (isLeafWidget(w) && hovered->isDescendantOf(const_cast<Widget*>(w)))))
+      line += " hovered";
+    std::string tip = visibleTooltip(node);
+    if(!tip.empty()) line.append(" tooltip=").append(quoted(tip));
     if(type == "dialog" || type == "window") {
       if(static_cast<const Window*>(w)->isModal()) line += " modal";
     }
@@ -146,13 +171,13 @@ static void dumpNode(const SvgNode* node, int depth, int flags, std::string& out
     if(isTypeAny(w, {"button"})) {
       const Button* btn = static_cast<const Button*>(w);
       if(btn->mMenu && btn->mMenu->isVisible())
-        dumpNode(btn->mMenu->node, depth + 1, flags, out);
+        dumpNode(btn->mMenu->node, depth + 1, flags, hovered, out);
     }
     return;
   }
   if(const SvgContainerNode* c = node->asContainerNode()) {
     for(const SvgNode* child : c->children())
-      dumpNode(child, print ? depth + 1 : depth, flags, out);
+      dumpNode(child, print ? depth + 1 : depth, flags, hovered, out);
   }
 }
 
@@ -160,7 +185,7 @@ std::string UiDriver::dump(Widget* root, int flags) const
 {
   std::string out;
   if(root)
-    dumpNode(root->node, 0, flags, out);
+    dumpNode(root->node, 0, flags, gui->hoveredWidget, out);
   return out;
 }
 
@@ -221,6 +246,13 @@ Widget* UiDriver::find(const std::string& query, Widget* root) const
   std::string kind = colon == std::string::npos ? "" : query.substr(0, colon);
   bool typed = !kind.empty() && kind.find_first_not_of("abcdefghijklmnopqrstuvwxyz") == std::string::npos;
   if(!typed) {
+    // SvgNode::select("#id") returns only one node (document's id lookup), but ids aren't unique, e.g. an
+    //  action's toolbar button and its (hidden) overflow menu item
+    if(query.size() > 1 && query[0] == '#'
+        && query.find_first_of(" .#:[>+~,", 1) == std::string::npos) {
+      const char* id = query.c_str() + 1;
+      return findDisplayed(root, [&](Widget* w){ return strcmp(w->node->xmlId(), id) == 0; });
+    }
     // CSS selector
     for(Widget* w : root->select(query.c_str())) {
       if(w->isDisplayed()) return w;
