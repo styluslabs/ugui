@@ -809,6 +809,7 @@ static NSURL* pendingOpenURL = nil;
 
 - (void)applicationWillResignActive:(UIApplication *)application
 {
+  pushWindowEvent(SDL_WINDOWEVENT_FOCUS_LOST);  // as SDL - app stores clipboard, stops ext. modification timer
   dispatchNow(SDL_APP_WILLENTERBACKGROUND);
 }
 
@@ -826,6 +827,7 @@ static NSURL* pendingOpenURL = nil;
 - (void)applicationDidBecomeActive:(UIApplication *)application
 {
   dispatchNow(SDL_APP_DIDENTERFOREGROUND);
+  pushWindowEvent(SDL_WINDOWEVENT_FOCUS_GAINED);  // as SDL - app shows initial doc list, loads clipboard
   pushWindowEvent(SDL_WINDOWEVENT_EXPOSED);  // make sure we redraw
 }
 

@@ -598,6 +598,11 @@ static bool winInputEvent(MSG* m)
     }
     else
       return processPointerFrame(GET_POINTERID_WPARAM(m->wParam), TouchPointReleased);
+  case WM_POINTERLEAVE:
+    // mouse or hovering pen left window - clear hover state (touch sends this after every release)
+    if(GetPointerInfo(GET_POINTERID_WPARAM(m->wParam), &pointerInfo[0]) && pointerInfo[0].pointerType != PT_TOUCH)
+      pushWindowEvent(SDL_WINDOWEVENT_LEAVE);
+    return false;
   default:
     break;
   }
@@ -623,8 +628,16 @@ static bool mouseFallbackEvent(MSG* m)
     POINT pt = {(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};  // GET_X_LPARAM, GET_Y_LPARAM
     ClientToScreen(m->hwnd, &pt);
     notifyMouseEvent(pt.x, pt.y, buttons, GetMessageTime());
+    if(m->message == WM_MOUSEMOVE) {
+      // request WM_MOUSELEAVE (cancelled after each WM_MOUSELEAVE, so request again on every move)
+      TRACKMOUSEEVENT tme = {sizeof(TRACKMOUSEEVENT), TME_LEAVE, m->hwnd, 0};
+      TrackMouseEvent(&tme);
+    }
     return true;
   }
+  case WM_MOUSELEAVE:
+    pushWindowEvent(SDL_WINDOWEVENT_LEAVE);
+    return true;
   default:
     return false;
   }

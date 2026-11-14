@@ -1012,13 +1012,31 @@ static void processX11Event(XEvent* xevent)
     SDL_PushEvent(&event);
     break;
   }
+  case LeaveNotify:
+  {
+    // clear hover state; while a button is held, wait for NotifyUngrab (sent on release outside window)
+    const XCrossingEvent& xc = xevent->xcrossing;
+    const unsigned int btnmask = Button1Mask | Button2Mask | Button3Mask | Button4Mask | Button5Mask;
+    if(xc.detail != NotifyInferior && (xc.mode == NotifyUngrab || !(xc.state & btnmask))) {
+      SDL_Event event = {0};
+      event.type = SDL_WINDOWEVENT;
+      event.window.event = SDL_WINDOWEVENT_LEAVE;
+      SDL_PushEvent(&event);
+    }
+    break;
+  }
   case FocusIn:
   case FocusOut:
   {
+    static bool hasFocus = false;
     currKeymod = KMOD_NONE;  // reset mod state because we don't get key events when not focused
+    // as SDL: ignore focus changes for keyboard grabs (global hotkeys, e.g. Alt+Tab) and to/from child windows
+    if(xevent->xfocus.mode == NotifyGrab || xevent->xfocus.mode == NotifyUngrab
+        || xevent->xfocus.detail == NotifyInferior || hasFocus == (xevent->type == FocusIn)) { break; }
+    hasFocus = xevent->type == FocusIn;
     SDL_Event event = {0};
     event.type = SDL_WINDOWEVENT;
-    event.window.event = xevent->type == FocusIn ? SDL_WINDOWEVENT_FOCUS_GAINED : SDL_WINDOWEVENT_FOCUS_LOST;
+    event.window.event = hasFocus ? SDL_WINDOWEVENT_FOCUS_GAINED : SDL_WINDOWEVENT_FOCUS_LOST;
     SDL_PushEvent(&event);
     break;
   }
