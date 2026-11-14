@@ -67,6 +67,39 @@ EM_JS(void, jsFetchStart, (double id, const char* url, const char* method, const
   });
 });
 
+// request sent on page unload; opts are built the same way as for jsFetchStart
+EM_JS(void, jsFetchOnUnload, (double id, const char* url, const char* method, const char* headers,
+    const void* body, int bodylen, const char* user, const char* password), {
+  if(!Module.httpUnloadReqs) {
+    Module.httpUnloadReqs = new Map();
+    window.addEventListener('pagehide', () => {
+      for(const [k, r] of Module.httpUnloadReqs) {
+        try { fetch(r.url, r.opts).catch(e => {}); } catch(e) {}
+      }
+      // page may be restored from bfcache, in which case app will find session gone and reconnect
+      Module.httpUnloadReqs.clear();
+    });
+  }
+  const hdrs = new Headers();
+  for(const line of UTF8ToString(headers).split("\n")) {
+    const colon = line.indexOf(":");
+    if(colon <= 0) { continue; }
+    try { hdrs.append(line.substring(0, colon).trim(), line.substring(colon + 1).trim()); } catch(e) {}
+  }
+  const u = UTF8ToString(user);
+  if(u) {
+    const cred = new TextEncoder().encode(u + ":" + UTF8ToString(password));
+    hdrs.set("Authorization", "Basic " + btoa(String.fromCharCode.apply(null, cred)));
+  }
+  const opts = { method: UTF8ToString(method), headers: hdrs, keepalive: true, cache: "no-store" };
+  if(bodylen > 0) { opts.body = HEAPU8.slice(body, body + bodylen); }  // keepalive body limit is 64 KB
+  Module.httpUnloadReqs.set(id, { url: UTF8ToString(url), opts: opts });
+});
+
+EM_JS(void, jsCancelOnUnload, (double id), {
+  if(Module.httpUnloadReqs) { Module.httpUnloadReqs.delete(id); }
+});
+
 // abort; if notify is false, request is forgotten (no callback)
 EM_JS(void, jsFetchCancel, (double id, int notify), {
   const req = Module.httpFetchReqs && Module.httpFetchReqs.get(id);
@@ -139,6 +172,20 @@ void httpFetchDone(double _id, int status, const char* headers, const char* body
   if(status == 0)
     resp.error = error[0] ? error : "request failed";
   if(cb) cb(std::move(resp));
+}
+
+uint64_t httpRequestOnUnload(const HttpRequest& req)
+{
+  uint64_t id = nextReqId++;
+  std::string method = !req.method.empty() ? req.method : (req.body.empty() ? "GET" : "POST");
+  jsFetchOnUnload(double(id), req.url.c_str(), method.c_str(), req.headers.c_str(), req.body.data(),
+      int(req.body.size()), req.user.c_str(), req.password.c_str());
+  return id;
+}
+
+void httpCancelOnUnload(uint64_t id)
+{
+  if(id) jsCancelOnUnload(double(id));
 }
 
 std::unique_ptr<HttpClient> HttpClient::create(const Options& opts)

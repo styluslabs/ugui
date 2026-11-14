@@ -87,6 +87,13 @@ public:
   static std::unique_ptr<HttpClient> create(const Options& opts);
 };
 
+#ifdef __EMSCRIPTEN__
+// fetch backend (http_fetch.cpp): send req (fetch w/ keepalive, no response) when page is unloaded (pagehide),
+//  e.g. to end a server session; returns id for httpCancelOnUnload() (call when request is no longer needed)
+uint64_t httpRequestOnUnload(const HttpRequest& req);
+void httpCancelOnUnload(uint64_t id);
+#endif
+
 // plain HTTP client (http_unet.cpp)
 std::unique_ptr<HttpClient> createUnetHttpClient(const HttpClient::Options& opts);
 
