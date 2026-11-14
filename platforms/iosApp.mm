@@ -784,6 +784,9 @@ static NSURL* pendingOpenURL = nil;
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+  // working dir = app bundle so app can load bundled resources (fonts, etc.) by relative path (as SDL does)
+  [[NSFileManager defaultManager] changeCurrentDirectoryPath:[[NSBundle mainBundle] resourcePath]];
+
   mainRunLoop = CFRunLoopGetCurrent();
   CFRunLoopSourceContext ctx = {};
   ctx.perform = wakeSourcePerform;
