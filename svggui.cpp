@@ -566,9 +566,7 @@ static int timerThreadFn(void* _self)
 Timer* SvgGui::setTimer(int msec, Widget* widget, const std::function<int()>& callback)
 {
   ASSERT(msec > 0);
-#if PLATFORM_EMSCRIPTEN
-//#error "Don't forget to fix this"
-#else
+#if !PLATFORM_EMSCRIPTEN  // timer thread replaced by platformSetTimer()
   if(!timerThread)
     timerThread.reset(new std::thread(timerThreadFn, (void*)this));
 #endif
@@ -580,7 +578,11 @@ Timer* SvgGui::setTimer(int msec, Widget* widget, const std::function<int()>& ca
   timer.nextTick = mSecSinceEpoch() + msec;
   if(timer.nextTick < nextTimeout) {
     nextTimeout = timer.nextTick;
+#if PLATFORM_EMSCRIPTEN
+    platformSetTimer(nextTimeout, TIMER);
+#else
     timerSem.post();
+#endif
   }
   return &*timers.insert(std::lower_bound(timers.begin(), timers.end(), timer), std::move(timer));
 }
@@ -1285,8 +1287,12 @@ bool SvgGui::processTimers()
     }
   }
   nextTimeout = timers.empty() ? MAX_TIMESTAMP : timers.front().nextTick;
+#if PLATFORM_EMSCRIPTEN
+  platformSetTimer(nextTimeout, TIMER);
+#else
   if(nextTimeout != MAX_TIMESTAMP)
     timerSem.post();  // wake timer thread to update timeout
+#endif
   return true;
 }
 
@@ -1561,8 +1567,8 @@ bool SvgGui::sdlMouseEvent(SDL_Event* event)
     p = Point(event->motion.x, event->motion.y);
   }
   else if(event->type == SDL_MOUSEWHEEL) {
-#if !PLATFORM_WIN
-    // on Windows, we handle mouse wheel ourselves because SDL throws away resolution
+#if !PLATFORM_WIN && !PLATFORM_EMSCRIPTEN
+    // on Windows and in browser, platform sends wheel in 1/120 units (SDL threw away resolution on Windows)
     event->wheel.x *= 120;
     event->wheel.y *= 120;
 #endif

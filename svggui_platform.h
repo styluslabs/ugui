@@ -56,6 +56,14 @@ void* platformGetNativeWindow();
 // run fn on the thread running appMain() (for calls from other threads, e.g. Android UI thread)
 void platformRunOnAppThread(std::function<void()> fn);
 
+#ifdef __EMSCRIPTEN__
+// wasmmain.cpp (requires JSPI): suspend for ms, returning to browser so async results (e.g. HTTP responses) are
+//  delivered; queued events are not processed
+void platformSleep(int ms);
+// SvgGui timers: push event of eventType at time when (mSecSinceEpoch()); MAX_TIMESTAMP to cancel
+void platformSetTimer(int64_t when, uint32_t eventType);
+#endif
+
 #ifdef __ANDROID__
 // SDL-compatible accessors (androidApp.cpp); SDL_AndroidGetActivity returns local ref, caller must delete
 void* SDL_AndroidGetJNIEnv();
