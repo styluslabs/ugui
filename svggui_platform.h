@@ -64,6 +64,12 @@ void platformSleep(int ms);
 void platformSetTimer(int64_t when, uint32_t eventType);
 #endif
 
+#if defined(__linux__) && !defined(__ANDROID__)
+// linuxmain.cpp: window icon (X11 _NET_WM_ICON) for taskbars that don't use .desktop file icon (or if no .desktop
+//  file is installed); one image per size, RGBA, not premultiplied.  Other platforms use the app/exe icon
+void platformSetWindowIcon(const Image* images, int count);
+#endif
+
 #ifdef __ANDROID__
 // SDL-compatible accessors (androidApp.cpp); SDL_AndroidGetActivity returns local ref, caller must delete
 void* SDL_AndroidGetJNIEnv();

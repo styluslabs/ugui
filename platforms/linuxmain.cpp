@@ -1368,7 +1368,8 @@ PlatformWindow* platformInit(PlatformConfig& cfg)
   // window title; WM_NORMAL_HINTS (position and size)
   setXWindowTitle(xDpy, xWin, wintitle);
   XSetWMNormalHints(xDpy, xWin, &winSize);
-  // no _NET_WM_ICON: if WM_CLASS is set correctly, launcher icon specified in .desktop file is used
+  // WM_CLASS lets desktop match window to .desktop file (for launcher icon); app can also set _NET_WM_ICON
+  //  w/ platformSetWindowIcon() for taskbars that only use that (e.g. XFCE) or if no .desktop file is installed
 
   WinStateAtoms.NET_WM_STATE = XInternAtom(xDpy, "_NET_WM_STATE", False);
   WinStateAtoms.NET_WM_STATE_MAXIMIZED_VERT = XInternAtom(xDpy, "_NET_WM_STATE_MAXIMIZED_VERT", False);
@@ -1476,10 +1477,38 @@ std::unique_ptr<PlatformCursor> platformCreateCursor(const Image* image, int hot
   cursorImage->xhot = hot_x;
   cursorImage->yhot = hot_y;
   cursorImage->delay = 0; // Only used for animated cursors
-  memcpy(cursorImage->pixels, image->constPixels(), image->dataLen());
+  // Image is RGBA bytes, not premultiplied; Xcursor expects premultiplied ARGB words
+  const unsigned char* px = image->constBytes();
+  for(int ii = 0; ii < image->width*image->height; ++ii, px += 4) {
+    unsigned int a = px[3];
+    cursorImage->pixels[ii] = a << 24 | (px[0]*a + 127)/255 << 16 | (px[1]*a + 127)/255 << 8 | (px[2]*a + 127)/255;
+  }
   Cursor cursor = XcursorImageLoadCursor(xContext.dpy, cursorImage);
   XcursorImageDestroy(cursorImage);
   return std::make_unique<X11Cursor>(cursor);
+}
+
+void platformSetWindowIcon(const Image* images, int count)
+{
+  // _NET_WM_ICON: for each image, width, height, then width*height ARGB pixels (not premultiplied); format 32
+  //  property data is passed to Xlib as an array of long (64 bits on LP64), one value per element
+  std::vector<long> data;
+  for(int ii = 0; ii < count; ++ii) {
+    const Image& img = images[ii];
+    const unsigned char* px = img.constBytes();
+    if(!px) { continue; }
+    data.push_back(img.width);
+    data.push_back(img.height);
+    for(int jj = 0; jj < img.width*img.height; ++jj, px += 4)  // RGBA bytes -> ARGB
+      data.push_back((unsigned long)px[3] << 24 | px[0] << 16 | px[1] << 8 | px[2]);
+  }
+  Atom netWmIcon = XInternAtom(xContext.dpy, "_NET_WM_ICON", False);
+  if(data.empty())
+    XDeleteProperty(xContext.dpy, xContext.win, netWmIcon);
+  else
+    XChangeProperty(xContext.dpy, xContext.win, netWmIcon, XA_CARDINAL, 32, PropModeReplace,
+        (const unsigned char*)data.data(), int(data.size()));
+  XFlush(xContext.dpy);
 }
 
 #define _NET_WM_STATE_REMOVE        0
