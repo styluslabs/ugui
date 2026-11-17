@@ -505,6 +505,10 @@ void UiDriver::pollCommands()
     }
     return;
   }
+  if(pendingAppCmd >= 0) {
+    runAppCommand(size_t(pendingAppCmd), pendingArgs);
+    return;
+  }
   std::string line;
   {
     std::lock_guard<std::mutex> lock(cmdMutex);
@@ -570,6 +574,30 @@ static const char* commandHelp =
     "  set timeout <secs> - close modal not handled for this long (<= 0: never)\n"
     "  quit\n";
 
+void UiDriver::addCommand(const std::string& name, const std::string& help, CommandFn fn)
+{
+  appCommands.push_back({toLower(name), help, std::move(fn)});
+}
+
+// returns false if command not handled
+bool UiDriver::runAppCommand(size_t idx, const std::vector<std::string>& args)
+{
+  std::string status, output;
+  CommandResult res = appCommands[idx].fn(args, status, output);
+  if(res == CMD_UNHANDLED) return false;
+  if(res == CMD_PENDING) {
+    if(pendingAppCmd < 0) {
+      pendingAppCmd = int(idx);
+      pendingArgs = args;
+    }
+    return true;
+  }
+  pendingAppCmd = -1;
+  pendingArgs.clear();
+  reply(status.empty() ? "ok" : status, output);
+  return true;
+}
+
 void UiDriver::runCommand(const std::string& line)
 {
   currCmd = line;
@@ -588,8 +616,18 @@ void UiDriver::runCommand(const std::string& line)
       errors.clear();
     }
   };
-  if(cmd == "help")
-    reply("ok", commandHelp);
+  for(size_t ii = 0; ii < appCommands.size(); ++ii) {
+    if(appCommands[ii].name == cmd && runAppCommand(ii, args)) return;
+  }
+  if(cmd == "help") {
+    std::string help = commandHelp;
+    if(!appCommands.empty()) {
+      help += "app commands:\n";
+      for(const AppCommand& c : appCommands)
+        help += "  " + c.help + "\n";
+    }
+    reply("ok", help);
+  }
   else if(cmd == "dump") {
     int flags = 0;
     bool all = false;

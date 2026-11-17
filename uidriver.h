@@ -80,6 +80,15 @@ public:
   std::function<void()> onQuit;
   bool autoDump = true;  // dump top window after each action
 
+  // app-specific commands, checked before built-in commands (so can extend one, e.g. "wait complete") and
+  //  listed by help; fn sets status ("ok" if left empty, or "error: ...") and output and returns CMD_DONE, or
+  //  returns CMD_PENDING to be called again (w/ same args) from each poll() until done - later commands wait,
+  //  as for wait/sleep - or CMD_UNHANDLED to pass command on to later app commands and built-in commands
+  enum CommandResult { CMD_DONE, CMD_PENDING, CMD_UNHANDLED };
+  typedef std::function<CommandResult(const std::vector<std::string>& args, std::string& status,
+      std::string& output)> CommandFn;
+  void addCommand(const std::string& name, const std::string& help, CommandFn fn);
+
 private:
   Widget* findOrErr(const std::string& query);
   bool checkTarget(Widget* w, Point* p);
@@ -88,6 +97,7 @@ private:
   void pollCommands();
   void runCommand(const std::string& line);
   void reply(const std::string& status, const std::string& output = "");
+  bool runAppCommand(size_t idx, const std::vector<std::string>& args);
 
   struct ModalHandler { std::string title; std::function<void(UiDriver&, Window*)> fn; };
   SvgGui* gui;
@@ -107,4 +117,8 @@ private:
   std::string waitQuery;  // wait / waitgone
   bool waitGone = false;
   Timestamp waitUntil = 0;  // also for sleep
+  struct AppCommand { std::string name; std::string help; CommandFn fn; };
+  std::vector<AppCommand> appCommands;
+  int pendingAppCmd = -1;  // index of app command returning CMD_PENDING
+  std::vector<std::string> pendingArgs;
 };
