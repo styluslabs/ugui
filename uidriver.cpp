@@ -346,7 +346,9 @@ Widget* UiDriver::findOrErr(const std::string& query)
 bool UiDriver::checkTarget(Widget* w, Point* p)
 {
   if(!w) return false;  // error already added by findOrErr
-  std::string desc = displayType(w) + " " + quoted(widgetText(w));
+  std::string text = widgetText(w);
+  std::string desc = displayType(w) + " " + (text.empty() && !hiddenTitle(w).empty() ?
+      "title=" + quoted(hiddenTitle(w)) : quoted(text));
   auto fail = [&](const std::string& why) { errors.push_back(desc + ": " + why); return false; };
   if(!w->isDisplayed()) return fail("not displayed");
   if(!w->isEnabled()) return fail("disabled");
