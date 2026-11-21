@@ -60,6 +60,8 @@ public:
   //  fn = NULL just allows the modal (e.g. a progress dialog that closes itself) until modalTimeout
   void onModal(const std::string& titleMatch, std::function<void(UiDriver&, Window*)> fn);
   size_t pendingModalHandlers() const { return modalHandlers.size(); }
+  // remove handlers not yet used (e.g. ones registered for a dialog that may or may not be shown)
+  void clearModalHandlers() { modalHandlers.clear(); }
   // actions only push events, which are processed by the event loop after the current handler or step
   //  returns, so a step depending on the result of earlier actions (e.g. OK enabled after typing a name) must
   //  be queued w/ then(); steps run one per poll(), in order
