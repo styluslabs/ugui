@@ -1608,6 +1608,8 @@ bool SvgGui::sdlMouseEvent(SDL_Event* event)
     fevent.tfinger.type = SDL_FINGERMOTION;
     fevent.tfinger.fingerId = event->motion.state;
   }
+  if(fevent.type == SDL_FINGERDOWN && touchPoints.empty())
+    pressEvent = fevent;
   updateGestures(&fevent);
   return sendEventFilt(win, widgetAt(win, p), &fevent);
 }
