@@ -110,6 +110,41 @@ std::string UiDriver::widgetText(const Widget* w)
   return collapseSpace(out);
 }
 
+std::string UiDriver::hiddenTitle(const Widget* w)
+{
+  if(!widgetText(w).empty() || !isLeafWidget(w)) return "";
+  std::string out;
+  gatherText(w->node, true, true, true, out);
+  return collapseSpace(out);
+}
+
+static const SvgUse* findUse(const SvgNode* node, bool isRoot)
+{
+  // as for gatherText() w/ crossWidgets: nodes inside leaf widget can have their own Widget (e.g. Button's .icon
+  //  <use>, or container w/ layout attributes); only a menu is skipped
+  if(node->type() == SvgNode::USE) return static_cast<const SvgUse*>(node);
+  if(!isRoot && node->hasExt() && strcmp(static_cast<const Widget*>(node->ext(false))->typeName(), "menu") == 0)
+    return NULL;
+  if(const SvgContainerNode* c = node->asContainerNode()) {
+    for(const SvgNode* child : c->children()) {
+      if(const SvgUse* use = findUse(child, false)) return use;
+    }
+  }
+  return NULL;
+}
+
+std::string UiDriver::iconName(const Widget* w)
+{
+  if(!isLeafWidget(w)) return "";
+  const SvgUse* use = findUse(w->node, true);
+  if(!use) return "";
+  // target set directly (e.g. Button::setIcon()) leaves href unchanged, so prefer target's id
+  const SvgNode* target = use->target();
+  if(target && target->xmlId()[0]) return target->xmlId();
+  const char* hash = strchr(use->href(), '#');
+  return hash ? std::string(hash + 1) : std::string();
+}
+
 static std::string quoted(const std::string& s)
 {
   std::string res = "\"";
@@ -141,6 +176,12 @@ static void dumpNode(const SvgNode* node, int depth, int flags, const Widget* ho
     line += type;
     if(node->xmlId()[0]) line.append("#").append(node->xmlId());
     if(!text.empty()) line.append(" ").append(quoted(text));
+    else {
+      std::string title = UiDriver::hiddenTitle(w);
+      if(!title.empty()) line.append(" title=").append(quoted(title));
+    }
+    std::string icon = UiDriver::iconName(w);
+    if(!icon.empty()) line.append(" icon=").append(icon);
     if(type == "spinbox")
       line += fstring(" value=%g", static_cast<const SpinBox*>(w)->value());
     else if(type == "slider")
@@ -281,7 +322,13 @@ Widget* UiDriver::find(const std::string& query, Widget* root) const
     });
     return res;
   }
-  return findDisplayed(root, [&](Widget* w){ return displayType(w) == kind && widgetText(w) == arg; });
+  if(kind == "icon")
+    return findDisplayed(root, [&](Widget* w){ return iconName(w) == arg; });
+  return findDisplayed(root, [&](Widget* w){
+    if(displayType(w) != kind) return false;
+    std::string text = widgetText(w);
+    return text == arg || (text.empty() && hiddenTitle(w) == arg);
+  });
 }
 
 Widget* UiDriver::findOrErr(const std::string& query)
@@ -316,7 +363,7 @@ bool UiDriver::checkTarget(Widget* w, Point* p)
   return true;
 }
 
-void UiDriver::pushMouse(Uint32 type, Window* win, Point p)
+void UiDriver::pushMouse(Uint32 type, Window* win, Point p, Uint32 buttons)
 {
   SDL_Event event = {0};
   event.type = type;
@@ -330,6 +377,7 @@ void UiDriver::pushMouse(Uint32 type, Window* win, Point p)
 #endif
   if(type == SDL_MOUSEMOTION) {
     event.motion.windowID = winId;
+    event.motion.state = buttons;
     event.motion.x = int(p.x + 0.5);
     event.motion.y = int(p.y + 0.5);
   }
@@ -341,6 +389,22 @@ void UiDriver::pushMouse(Uint32 type, Window* win, Point p)
     event.button.x = int(p.x + 0.5);
     event.button.y = int(p.y + 0.5);
   }
+  SDL_PeepEvents(&event, 1, SDL_ADDEVENT, 0, 0);
+}
+
+void UiDriver::pushTouch(Uint32 type, Window* win, Point p)
+{
+  SDL_Event event = {0};
+  event.type = type;
+  event.tfinger.timestamp = SDL_GetTicks();
+#ifndef SVGGUI_MULTIWINDOW
+  p = (p + win->winBounds().origin())/gui->inputScale;
+#endif
+  event.tfinger.touchId = 1;  // not SDL_TOUCH_MOUSEID or a pen id
+  event.tfinger.fingerId = 1;
+  event.tfinger.x = p.x;
+  event.tfinger.y = p.y;
+  event.tfinger.pressure = 1;
   SDL_PeepEvents(&event, 1, SDL_ADDEVENT, 0, 0);
 }
 
@@ -363,6 +427,82 @@ bool UiDriver::hover(Widget* w)
   pushMouse(SDL_MOUSEMOTION, w->window(), p);
   PLATFORM_WakeEventLoop();
   return true;
+}
+
+bool UiDriver::parsePoint(const std::string& spec0, Point* p)
+{
+  double x, y, dx = 0, dy = 0;
+  char extra;
+  // optional offset suffix +dx,dy
+  std::string spec = spec0;
+  size_t plus = spec.rfind('+');
+  if(plus != std::string::npos && plus > 0 && sscanf(spec.c_str() + plus, "+%lf,%lf%c", &dx, &dy, &extra) == 2)
+    spec = spec.substr(0, plus);
+  else
+    dx = dy = 0;
+  bool ok = false;
+  if(sscanf(spec.c_str(), "%lf,%lf%c", &x, &y, &extra) == 2) {
+    *p = Point(x, y);
+    ok = true;
+  }
+  else if(resolvePoint && resolvePoint(spec, p))
+    ok = true;
+  else if(Widget* w = find(spec)) {
+    Rect r = w->node->bounds();
+    if(r.isValid()) {
+      *p = r.center();
+      ok = true;
+    }
+  }
+  if(!ok) {
+    errors.push_back("invalid point (x,y, app point or widget query, optional +dx,dy): " + spec0);
+    return false;
+  }
+  *p += Point(dx, dy);
+  Window* top = topWindow();
+  Rect wr = top ? top->node->bounds() : Rect();
+  if(top && wr.isValid() && !wr.contains(*p)) {
+    errors.push_back(fstring("point %s (%.0f,%.0f) outside window", spec0.c_str(), p->x, p->y));
+    return false;
+  }
+  return true;
+}
+
+void UiDriver::queueMouse(MouseAction action, Point p, int delayMs)
+{
+  Timestamp now = mSecSinceEpoch();
+  if(mouseQueue.empty()) {
+    mouseWin = topWindow();
+    mouseQueueEnd = now;
+  }
+  mouseQueueEnd += delayMs;
+  mouseQueue.push_back(QueuedMouse{mouseQueueEnd, action, p});
+  PLATFORM_WakeEventLoop();
+}
+
+void UiDriver::sendQueuedMouse()
+{
+  Timestamp now = mSecSinceEpoch();
+  bool sent = false;
+  while(!mouseQueue.empty() && mouseQueue.front().at <= now) {
+    QueuedMouse m = mouseQueue.front();
+    mouseQueue.pop_front();
+    if(touchInput) {
+      if(m.action == MOUSE_DOWN || m.action == MOUSE_UP || mouseDown)  // no hover for touch
+        pushTouch(m.action == MOUSE_DOWN ? SDL_FINGERDOWN : m.action == MOUSE_UP ? SDL_FINGERUP : SDL_FINGERMOTION,
+            mouseWin, m.p);
+    }
+    else if(m.action == MOUSE_DOWN)
+      pushMouse(SDL_MOUSEBUTTONDOWN, mouseWin, m.p);
+    else if(m.action == MOUSE_UP)
+      pushMouse(SDL_MOUSEBUTTONUP, mouseWin, m.p);
+    else
+      pushMouse(SDL_MOUSEMOTION, mouseWin, m.p, mouseDown ? SDL_BUTTON_LMASK : 0);
+    if(m.action != MOUSE_MOVE)
+      mouseDown = m.action == MOUSE_DOWN;
+    sent = true;
+  }
+  if(sent) PLATFORM_WakeEventLoop();
 }
 
 bool UiDriver::key(SDL_Keycode sym, Uint16 mods)
@@ -424,6 +564,8 @@ void UiDriver::poll()
     modalSince = mSecSinceEpoch();
     if(m) ++nModals;
   }
+  if(!mouseQueue.empty())
+    sendQueuedMouse();
   if(!steps.empty()) {
     std::function<void(UiDriver&)> fn = std::move(steps.front());
     steps.pop_front();
@@ -473,6 +615,14 @@ void UiDriver::reply(const std::string& status, const std::string& output)
 
 void UiDriver::pollCommands()
 {
+  if(mouseCmd) {
+    // reply after last queued event has been sent and processed
+    if(mouseQueue.empty()) {
+      mouseCmd = false;
+      replyPending = true;
+    }
+    return;
+  }
   if(replyPending) {
     // action's events have been processed
     replyPending = false;
@@ -568,10 +718,19 @@ static const char* commandHelp =
     "  hover <query> - mouse motion to widget\n"
     "  type <query> <text> [append] - replaces text unless append\n"
     "  key <name> [ctrl] [shift] [alt] [gui] - e.g. key return; key a ctrl\n"
+    "  points: x,y (top window coords, as in dump bounds), widget query (center), or app point (e.g. geo:lng,lat),\n"
+    "    w/ optional offset +dx,dy (e.g. geo:7.75,48.58+0,-10)\n"
+    "  point <point> - print window coords of point\n"
+    "  mouse down|move|up <point> - left button; motion while down is a drag\n"
+    "  tap <point> - press and release\n"
+    "  longpress <point> [secs] - press, hold (default: long press delay + 0.3 s), release\n"
+    "  drag <point> <point> [secs] [hold secs] - press, (hold,) move in steps over secs (default 0.5), release\n"
     "  wait <query> [secs] - until widget is shown (default 10 s); waitgone <query> [secs]\n"
     "  sleep <secs>\n"
     "  set autodump on|off - dump top window after actions (default on)\n"
     "  set timeout <secs> - close modal not handled for this long (<= 0: never)\n"
+    "  set pointer mouse|touch - events sent by mouse/tap/longpress/drag (default mouse; touch for touch gestures,\n"
+    "    e.g. long press timer)\n"
     "  quit\n";
 
 void UiDriver::addCommand(const std::string& name, const std::string& help, CommandFn fn)
@@ -665,6 +824,38 @@ void UiDriver::runCommand(const std::string& line)
     else
       actionDone(key(sym, mods));
   }
+  else if(cmd == "point" && nargs == 1) {
+    Point p;
+    if(parsePoint(args[1], &p)) reply("ok", fstring("%.1f,%.1f", p.x, p.y));
+    else actionDone(false);
+  }
+  else if(cmd == "mouse" && nargs == 2 && (args[1] == "down" || args[1] == "move" || args[1] == "up")) {
+    Point p;
+    if(!parsePoint(args[2], &p)) { actionDone(false); return; }
+    queueMouse(args[1] == "down" ? MOUSE_DOWN : args[1] == "up" ? MOUSE_UP : MOUSE_MOVE, p);
+    mouseCmd = true;
+  }
+  else if((cmd == "tap" && nargs == 1) || (cmd == "longpress" && (nargs == 1 || nargs == 2))) {
+    Point p;
+    if(!parsePoint(args[1], &p)) { actionDone(false); return; }
+    int holdMs = cmd == "tap" ? 0 : nargs == 2 ? int(1000*atof(args[2].c_str())) : int(SvgGui::longPressDelayMs) + 300;
+    queueMouse(MOUSE_DOWN, p);
+    queueMouse(MOUSE_UP, p, holdMs);
+    mouseCmd = true;
+  }
+  else if(cmd == "drag" && nargs >= 2 && nargs <= 4) {
+    Point p0, p1;
+    if(!parsePoint(args[1], &p0) || !parsePoint(args[2], &p1)) { actionDone(false); return; }
+    int moveMs = nargs >= 3 ? int(1000*atof(args[3].c_str())) : 500;
+    int holdMs = nargs >= 4 ? int(1000*atof(args[4].c_str())) : 0;
+    // one motion event per ~50 ms, at least 4 (gesture thresholds use distance, not time)
+    int nsteps = std::max(4, moveMs/50);
+    queueMouse(MOUSE_DOWN, p0);
+    for(int ii = 1; ii <= nsteps; ++ii)
+      queueMouse(MOUSE_MOVE, p0 + (p1 - p0)*(double(ii)/nsteps), ii == 1 ? holdMs + moveMs/nsteps : moveMs/nsteps);
+    queueMouse(MOUSE_UP, p1);
+    mouseCmd = true;
+  }
   else if((cmd == "wait" || cmd == "waitgone") && (nargs == 1 || nargs == 2)) {
     waitQuery = args[1];
     waitGone = cmd == "waitgone";
@@ -676,6 +867,10 @@ void UiDriver::runCommand(const std::string& line)
   }
   else if(cmd == "set" && nargs == 2 && args[1] == "autodump") {
     autoDump = args[2] == "on";
+    reply("ok");
+  }
+  else if(cmd == "set" && nargs == 2 && args[1] == "pointer" && (args[2] == "mouse" || args[2] == "touch")) {
+    touchInput = args[2] == "touch";
     reply("ok");
   }
   else if(cmd == "set" && nargs == 2 && args[1] == "timeout") {

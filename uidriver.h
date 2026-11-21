@@ -25,9 +25,10 @@ public:
 
   // dump
   enum DumpFlags { DUMP_BOUNDS = 1, DUMP_HIDDEN = 2 };
-  // one line per widget: type[#id] "text" [value=...] [checked] [disabled] [focused] [hidden] [hovered]
-  //  [tooltip="..."] [modal] [x,y wxh]; generic container widgets w/o text or id are omitted (their children are
-  //  shown at the same level); hovered marks the deepest listed widget under the pointer (not its ancestors)
+  // one line per widget: type[#id] "text" [title="..."] [icon=...] [value=...] [checked] [disabled] [focused]
+  //  [hidden] [hovered] [tooltip="..."] [modal] [x,y wxh]; title: hidden title of widget w/o displayed text (e.g.
+  //  icon-only toolbutton); icon: id of leaf widget's icon (<use> target, e.g. "search"); generic container
+  //  widgets w/o text or id are omitted (their children are shown at the same level); hovered marks the deepest listed widget under the pointer (not its ancestors)
   std::string dump(Widget* root, int flags = DUMP_BOUNDS) const;
   // all windows (topmost modal last)
   std::string dumpAll(int flags = DUMP_BOUNDS) const;
@@ -37,11 +38,16 @@ public:
 
   // find displayed widget in root (default topWindow()); query:
   //  "#id", ".class", or other CSS selector; "button:Title" (also checkbox:, textedit:, textbox:, menu:,
-  //  combobox: ...) - widget of given type w/ text (exact match); "text:Foo" - any widget w/ text containing Foo;
+  //  combobox: ...) - widget of given type w/ text (exact match; hidden title for widget w/o displayed text);
+  //  "icon:name" - leaf widget w/ icon name (see dump); "text:Foo" - any widget w/ text containing Foo;
   //  "field:Label" - first input widget (textedit, checkbox, combobox, spinbox, ...) in row w/ label text
   Widget* find(const std::string& query, Widget* root = NULL) const;
   // text shown by widget (title for buttons, value for text edits, etc.)
   static std::string widgetText(const Widget* w);
+  // hidden title of widget w/o displayed text (e.g. icon-only toolbutton), otherwise empty
+  static std::string hiddenTitle(const Widget* w);
+  // icon id (id of first <use> target, or fragment of its href) of leaf widget, otherwise empty
+  static std::string iconName(const Widget* w);
 
   // actions; return false (and add to errors) on failure; target can be query string or Widget*
   bool click(Widget* w);
@@ -55,6 +61,18 @@ public:
       { return type(findOrErr(query), text, replace); }
   // key press (SDL_KEYDOWN + SDL_KEYUP) sent to focused widget of top window
   bool key(SDL_Keycode sym, Uint16 mods = 0);
+
+  // pointer input at a point (not a widget, e.g. for gestures on a map): point is "x,y" (top window coords, as
+  //  in dump bounds), a form handled by resolvePoint (e.g. app's "geo:lng,lat"), or a widget query (center of
+  //  widget's bounds; not checked for obscuring), w/ optional offset suffix "+dx,dy"; must be inside top window; events are queued w/ times (relative to now, in ms) and sent
+  //  from poll(), so delays need a running event loop (timers or periodic wake); the left button is held from
+  //  down to up, so motion events in between are drags
+  bool parsePoint(const std::string& spec, Point* p);
+  std::function<bool(const std::string& spec, Point* p)> resolvePoint;
+  enum MouseAction { MOUSE_DOWN, MOUSE_MOVE, MOUSE_UP };
+  void queueMouse(MouseAction action, Point p, int delayMs = 0);
+  bool mousePending() const { return !mouseQueue.empty(); }
+  bool touchInput = false;  // send queued pointer events as touch (finger) events instead of mouse events
 
   // modal handlers (FIFO): fn is called when a modal w/ title containing titleMatch is shown (empty matches any);
   //  fn = NULL just allows the modal (e.g. a progress dialog that closes itself) until modalTimeout
@@ -94,7 +112,9 @@ public:
 private:
   Widget* findOrErr(const std::string& query);
   bool checkTarget(Widget* w, Point* p);
-  void pushMouse(Uint32 type, Window* win, Point p);
+  void pushMouse(Uint32 type, Window* win, Point p, Uint32 buttons = 0);
+  void pushTouch(Uint32 type, Window* win, Point p);
+  void sendQueuedMouse();
 
   void pollCommands();
   void runCommand(const std::string& line);
@@ -110,6 +130,12 @@ private:
   bool currModalHandled = false;
   Timestamp modalSince = 0;
   bool inPoll = false;
+  struct QueuedMouse { Timestamp at; MouseAction action; Point p; };
+  std::deque<QueuedMouse> mouseQueue;
+  Timestamp mouseQueueEnd = 0;  // time of last queued event
+  Window* mouseWin = NULL;  // top window when first event was queued
+  bool mouseDown = false;
+  bool mouseCmd = false;  // mouse/tap/longpress/drag command waiting for queued events to be sent
 
   // command state
   std::mutex cmdMutex;
