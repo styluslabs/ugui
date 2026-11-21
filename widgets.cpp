@@ -1463,3 +1463,38 @@ Rect CustomWidget::bounds(SvgPainter* svgp) const
 {
   return svgp->p->getTransform().mapRect(mBounds);
 }
+
+// AutoAdjContainer
+
+// previously, adjFn only made one adjustment and was called in a loop, but having adjFn drive the layout
+//  process instead allows for simplier code and potentially more efficiency
+void AutoAdjContainer::repeatLayout(const Rect& dest)
+{
+  //window()->absPosNodes.erase(window()->absPosNodes.begin() + numAbsPos, window()->absPosNodes.end());
+  window()->gui()->layoutWidget(contents, dest);
+}
+
+AutoAdjContainer::AutoAdjContainer(SvgNode* n, Widget* _contents) : Widget(n), contents(_contents)
+{
+  addWidget(contents);
+
+  onApplyLayout = [this](const Rect& src, const Rect& dest){
+    // fit contents to container
+    //numAbsPos = window()->absPosNodes.size();
+    window()->gui()->layoutWidget(contents, dest);
+    if(adjFn) adjFn(src, dest);
+    contentsBBox = contents->node->bounds();
+    return true;
+  };
+
+  onPrepareLayout = [this](){
+    // we will typically only stretch along one direction - need to get content size for other direction
+    if(contentsBBox.isValid())
+      return contentsBBox.toSize();
+    //contents->setLayoutTransform(Transform2D());
+    //setLayoutTransform(Transform2D());
+    window()->gui()->layoutWidget(contents, Rect::wh(0, 0));
+    Rect bbox = contents->node->bounds();
+    return bbox.toSize();
+  };
+}

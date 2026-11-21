@@ -306,6 +306,19 @@ private:
   void show(Widget* tooltip, Point p, int align);
 };
 
+// container that lays out its contents to fit, then calls adjFn(src, dest), which can change contents (e.g. hide
+//  low priority toolbar items if they don't fit) and call repeatLayout(dest) to lay out again (moved from Write)
+class AutoAdjContainer : public Widget
+{
+public:
+  AutoAdjContainer(SvgNode* n, Widget* _contents);
+  void repeatLayout(const Rect& dest);
+
+  std::function<void(const Rect&, const Rect&)> adjFn;
+  Widget* contents;
+  Rect contentsBBox;
+};
+
 class CustomWidget : public Widget
 {
 public:
