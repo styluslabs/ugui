@@ -369,7 +369,7 @@ void UiDriver::pushMouse(Uint32 type, Window* win, Point p, Uint32 buttons)
 {
   SDL_Event event = {0};
   event.type = type;
-  event.common.timestamp = SDL_GetTicks();
+  event.common.timestamp = pushTimestamp ? pushTimestamp : SDL_GetTicks();
 #ifdef SVGGUI_MULTIWINDOW
   Uint32 winId = win->sdlWindow ? SDL_GetWindowID(win->sdlWindow) : 0;
 #else
@@ -398,7 +398,7 @@ void UiDriver::pushTouch(Uint32 type, Window* win, Point p, int fingerId)
 {
   SDL_Event event = {0};
   event.type = type;
-  event.tfinger.timestamp = SDL_GetTicks();
+  event.tfinger.timestamp = pushTimestamp ? pushTimestamp : SDL_GetTicks();
 #ifndef SVGGUI_MULTIWINDOW
   p = (p + win->winBounds().origin())/gui->inputScale;
 #endif
@@ -407,6 +407,19 @@ void UiDriver::pushTouch(Uint32 type, Window* win, Point p, int fingerId)
   event.tfinger.x = p.x;
   event.tfinger.y = p.y;
   event.tfinger.pressure = 1;
+  SDL_PeepEvents(&event, 1, SDL_ADDEVENT, 0, 0);
+}
+
+void UiDriver::pushWheel(Window* win, int dy)
+{
+  SDL_Event event = {0};
+  event.type = SDL_MOUSEWHEEL;
+  event.wheel.timestamp = pushTimestamp ? pushTimestamp : SDL_GetTicks();
+#ifdef SVGGUI_MULTIWINDOW
+  event.wheel.windowID = win->sdlWindow ? SDL_GetWindowID(win->sdlWindow) : 0;
+#endif
+  event.wheel.y = dy;  // position is last mouse position (send motion first)
+  event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
   SDL_PeepEvents(&event, 1, SDL_ADDEVENT, 0, 0);
 }
 
@@ -470,7 +483,7 @@ bool UiDriver::parsePoint(const std::string& spec0, Point* p)
   return true;
 }
 
-void UiDriver::queueMouse(MouseAction action, Point p, int delayMs, int finger)
+void UiDriver::queueMouse(MouseAction action, Point p, int delayMs, int finger, int wheel)
 {
   Timestamp now = mSecSinceEpoch();
   if(mouseQueue.empty()) {
@@ -478,7 +491,7 @@ void UiDriver::queueMouse(MouseAction action, Point p, int delayMs, int finger)
     mouseQueueEnd = now;
   }
   mouseQueueEnd += delayMs;
-  mouseQueue.push_back(QueuedMouse{mouseQueueEnd, action, p, finger});
+  mouseQueue.push_back(QueuedMouse{mouseQueueEnd, action, p, finger, wheel});
   PLATFORM_WakeEventLoop();
 }
 
@@ -489,10 +502,19 @@ void UiDriver::sendQueuedMouse()
   while(!mouseQueue.empty() && mouseQueue.front().at <= now) {
     QueuedMouse m = mouseQueue.front();
     mouseQueue.pop_front();
+    // timestamp events w/ scheduled time, since event loop may only run every ~100 ms (otherwise multiple
+    //  events get the same timestamp and velocity can't be computed, e.g. for fling)
+    pushTimestamp = SDL_GetTicks() - Uint32(std::min(Timestamp(1000), now - m.at));
+    if(pushTimestamp == 0) pushTimestamp = 1;
+    if(m.action == MOUSE_WHEEL) {
+      pushWheel(mouseWin, m.wheel);
+      sent = true;
+      continue;
+    }
     if(m.finger > 0)
       pushTouch(m.action == MOUSE_DOWN ? SDL_FINGERDOWN : m.action == MOUSE_UP ? SDL_FINGERUP : SDL_FINGERMOTION,
           mouseWin, m.p, m.finger);
-    else if(touchInput) {
+    else if(touchInput && m.finger == 0) {
       if(m.action == MOUSE_DOWN || m.action == MOUSE_UP || mouseDown)  // no hover for touch
         pushTouch(m.action == MOUSE_DOWN ? SDL_FINGERDOWN : m.action == MOUSE_UP ? SDL_FINGERUP : SDL_FINGERMOTION,
             mouseWin, m.p);
@@ -507,6 +529,7 @@ void UiDriver::sendQueuedMouse()
       mouseDown = m.action == MOUSE_DOWN;
     sent = true;
   }
+  pushTimestamp = 0;
   if(sent) PLATFORM_WakeEventLoop();
 }
 
@@ -731,6 +754,7 @@ static const char* commandHelp =
     "  longpress <point> [secs] - press, hold (default: long press delay + 0.3 s), release\n"
     "  drag <point> <point> [secs] [hold secs] - press, (hold,) move in steps over secs (default 0.5), release\n"
     "  pinch <point> <dist0> <dist1> [secs] - two finger pinch about point, finger separation dist0 -> dist1\n"
+    "  wheel <point> <steps> [secs] - mouse wheel steps (+ zoom in, - zoom out) at point, spread over secs\n"
     "  wait <query> [secs] - until widget is shown (default 10 s); waitgone <query> [secs]\n"
     "  sleep <secs>\n"
     "  set autodump on|off - dump top window after actions (default on)\n"
@@ -878,6 +902,18 @@ void UiDriver::runCommand(const std::string& line)
     }
     queueMouse(MOUSE_UP, c - Point(d1/2, 0), 0, 1);
     queueMouse(MOUSE_UP, c + Point(d1/2, 0), 0, 2);
+    mouseCmd = true;
+  }
+  else if(cmd == "wheel" && nargs >= 2 && nargs <= 3) {
+    // mouse wheel steps (+ up/zoom in, - down) at point, spread evenly over secs
+    Point p;
+    if(!parsePoint(args[1], &p)) { actionDone(false); return; }
+    int steps = atoi(args[2].c_str());
+    int ms = nargs >= 3 ? int(1000*atof(args[3].c_str())) : 0;
+    int n = std::abs(steps);
+    queueMouse(MOUSE_MOVE, p, 0, -1);  // set wheel position
+    for(int ii = 0; ii < n; ++ii)
+      queueMouse(MOUSE_WHEEL, p, ii == 0 ? 0 : ms/std::max(1, n - 1), 0, steps > 0 ? 1 : -1);
     mouseCmd = true;
   }
   else if((cmd == "wait" || cmd == "waitgone") && (nargs == 1 || nargs == 2)) {

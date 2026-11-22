@@ -69,8 +69,8 @@ public:
   //  down to up, so motion events in between are drags
   bool parsePoint(const std::string& spec, Point* p);
   std::function<bool(const std::string& spec, Point* p)> resolvePoint;
-  enum MouseAction { MOUSE_DOWN, MOUSE_MOVE, MOUSE_UP };
-  void queueMouse(MouseAction action, Point p, int delayMs = 0, int finger = 0);
+  enum MouseAction { MOUSE_DOWN, MOUSE_MOVE, MOUSE_UP, MOUSE_WHEEL };
+  void queueMouse(MouseAction action, Point p, int delayMs = 0, int finger = 0, int wheel = 0);
   bool mousePending() const { return !mouseQueue.empty(); }
   bool touchInput = false;  // send queued pointer events as touch (finger) events instead of mouse events
 
@@ -114,6 +114,7 @@ private:
   bool checkTarget(Widget* w, Point* p);
   void pushMouse(Uint32 type, Window* win, Point p, Uint32 buttons = 0);
   void pushTouch(Uint32 type, Window* win, Point p, int fingerId = 1);
+  void pushWheel(Window* win, int dy);
   void sendQueuedMouse();
 
   void pollCommands();
@@ -130,8 +131,10 @@ private:
   bool currModalHandled = false;
   Timestamp modalSince = 0;
   bool inPoll = false;
-  // finger > 0: always sent as touch event w/ this finger id (multi-touch gestures)
-  struct QueuedMouse { Timestamp at; MouseAction action; Point p; int finger; };
+  // finger > 0: always sent as touch event w/ this finger id (multi-touch gestures); finger < 0: always sent as
+  //  mouse event; wheel: wheel steps for MOUSE_WHEEL
+  struct QueuedMouse { Timestamp at; MouseAction action; Point p; int finger; int wheel; };
+  Uint32 pushTimestamp = 0;  // if set, timestamp for pushed events (scheduled time of queued event)
   std::deque<QueuedMouse> mouseQueue;
   Timestamp mouseQueueEnd = 0;  // time of last queued event
   Window* mouseWin = NULL;  // top window when first event was queued
