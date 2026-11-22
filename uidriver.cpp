@@ -394,7 +394,7 @@ void UiDriver::pushMouse(Uint32 type, Window* win, Point p, Uint32 buttons)
   SDL_PeepEvents(&event, 1, SDL_ADDEVENT, 0, 0);
 }
 
-void UiDriver::pushTouch(Uint32 type, Window* win, Point p)
+void UiDriver::pushTouch(Uint32 type, Window* win, Point p, int fingerId)
 {
   SDL_Event event = {0};
   event.type = type;
@@ -403,7 +403,7 @@ void UiDriver::pushTouch(Uint32 type, Window* win, Point p)
   p = (p + win->winBounds().origin())/gui->inputScale;
 #endif
   event.tfinger.touchId = 1;  // not SDL_TOUCH_MOUSEID or a pen id
-  event.tfinger.fingerId = 1;
+  event.tfinger.fingerId = fingerId;
   event.tfinger.x = p.x;
   event.tfinger.y = p.y;
   event.tfinger.pressure = 1;
@@ -470,7 +470,7 @@ bool UiDriver::parsePoint(const std::string& spec0, Point* p)
   return true;
 }
 
-void UiDriver::queueMouse(MouseAction action, Point p, int delayMs)
+void UiDriver::queueMouse(MouseAction action, Point p, int delayMs, int finger)
 {
   Timestamp now = mSecSinceEpoch();
   if(mouseQueue.empty()) {
@@ -478,7 +478,7 @@ void UiDriver::queueMouse(MouseAction action, Point p, int delayMs)
     mouseQueueEnd = now;
   }
   mouseQueueEnd += delayMs;
-  mouseQueue.push_back(QueuedMouse{mouseQueueEnd, action, p});
+  mouseQueue.push_back(QueuedMouse{mouseQueueEnd, action, p, finger});
   PLATFORM_WakeEventLoop();
 }
 
@@ -489,7 +489,10 @@ void UiDriver::sendQueuedMouse()
   while(!mouseQueue.empty() && mouseQueue.front().at <= now) {
     QueuedMouse m = mouseQueue.front();
     mouseQueue.pop_front();
-    if(touchInput) {
+    if(m.finger > 0)
+      pushTouch(m.action == MOUSE_DOWN ? SDL_FINGERDOWN : m.action == MOUSE_UP ? SDL_FINGERUP : SDL_FINGERMOTION,
+          mouseWin, m.p, m.finger);
+    else if(touchInput) {
       if(m.action == MOUSE_DOWN || m.action == MOUSE_UP || mouseDown)  // no hover for touch
         pushTouch(m.action == MOUSE_DOWN ? SDL_FINGERDOWN : m.action == MOUSE_UP ? SDL_FINGERUP : SDL_FINGERMOTION,
             mouseWin, m.p);
@@ -727,6 +730,7 @@ static const char* commandHelp =
     "  tap <point> - press and release\n"
     "  longpress <point> [secs] - press, hold (default: long press delay + 0.3 s), release\n"
     "  drag <point> <point> [secs] [hold secs] - press, (hold,) move in steps over secs (default 0.5), release\n"
+    "  pinch <point> <dist0> <dist1> [secs] - two finger pinch about point, finger separation dist0 -> dist1\n"
     "  wait <query> [secs] - until widget is shown (default 10 s); waitgone <query> [secs]\n"
     "  sleep <secs>\n"
     "  set autodump on|off - dump top window after actions (default on)\n"
@@ -856,6 +860,24 @@ void UiDriver::runCommand(const std::string& line)
     for(int ii = 1; ii <= nsteps; ++ii)
       queueMouse(MOUSE_MOVE, p0 + (p1 - p0)*(double(ii)/nsteps), ii == 1 ? holdMs + moveMs/nsteps : moveMs/nsteps);
     queueMouse(MOUSE_UP, p1);
+    mouseCmd = true;
+  }
+  else if(cmd == "pinch" && nargs >= 3 && nargs <= 4) {
+    // two fingers on a horizontal line through center, separation changing from dist0 to dist1 (touch events)
+    Point c;
+    if(!parsePoint(args[1], &c)) { actionDone(false); return; }
+    double d0 = atof(args[2].c_str()), d1 = atof(args[3].c_str());
+    int moveMs = nargs >= 4 ? int(1000*atof(args[4].c_str())) : 500;
+    int nsteps = std::max(4, moveMs/20);  // ~50 Hz, like touch screen input
+    queueMouse(MOUSE_DOWN, c - Point(d0/2, 0), 0, 1);
+    queueMouse(MOUSE_DOWN, c + Point(d0/2, 0), 0, 2);
+    for(int ii = 1; ii <= nsteps; ++ii) {
+      double d = d0 + (d1 - d0)*(double(ii)/nsteps);
+      queueMouse(MOUSE_MOVE, c - Point(d/2, 0), moveMs/nsteps, 1);
+      queueMouse(MOUSE_MOVE, c + Point(d/2, 0), 0, 2);
+    }
+    queueMouse(MOUSE_UP, c - Point(d1/2, 0), 0, 1);
+    queueMouse(MOUSE_UP, c + Point(d1/2, 0), 0, 2);
     mouseCmd = true;
   }
   else if((cmd == "wait" || cmd == "waitgone") && (nargs == 1 || nargs == 2)) {
